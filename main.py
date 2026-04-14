@@ -27,6 +27,11 @@ from pathlib import Path
 from categories import ALL_CATEGORIES
 from runner import run_category
 from scorer import score_test, compute_category_score
+from remediation import (
+    get_remediation_for_test,
+    get_remediation_for_category,
+    get_remediation_for_evaluation,
+)
 
 app = FastAPI(
     title="Agent Gauntlet",
@@ -51,10 +56,16 @@ class EvaluateRequest(BaseModel):
     protocol: str = "simple"  # "openai" | "simple"
     categories: Optional[list[str]] = None  # None = run all 6
     timeout: float = 30.0  # per-test timeout in seconds
+    include_remediation: bool = True  # search GitHub for fixes on failures
 
 
 class TestListRequest(BaseModel):
     categories: Optional[list[str]] = None
+
+
+class RemediateRequest(BaseModel):
+    test_ids: Optional[list[str]] = None  # specific failed test IDs
+    categories: Optional[list[str]] = None  # or entire failed categories
 
 
 # ── Routes ──────────────────────────────────────────────────────────
@@ -150,7 +161,8 @@ async def evaluate(req: EvaluateRequest, background_tasks: BackgroundTasks):
 
     # Run evaluation in background
     background_tasks.add_task(
-        _run_evaluation, eval_id, req.agent_url, req.protocol, cats, req.timeout
+        _run_evaluation, eval_id, req.agent_url, req.protocol, cats, req.timeout,
+        req.include_remediation,
     )
 
     return {
@@ -193,7 +205,10 @@ async def evaluate_sync(req: EvaluateRequest):
         "scorecard": {},
     }
 
-    await _run_evaluation(eval_id, req.agent_url, req.protocol, cats, req.timeout)
+    await _run_evaluation(
+        eval_id, req.agent_url, req.protocol, cats, req.timeout,
+        req.include_remediation,
+    )
 
     return evaluations[eval_id]
 
@@ -204,6 +219,75 @@ def get_results(eval_id: str):
     if eval_id not in evaluations:
         return JSONResponse(status_code=404, content={"error": "Evaluation not found"})
     return evaluations[eval_id]
+
+
+@app.post("/api/remediate")
+def remediate(req: RemediateRequest):
+    """Find GitHub repos that fix specific gauntlet failures.
+
+    Accepts either specific test IDs or category IDs. Searches GitHub for
+    battle-tested, high-star repos that solve the identified failure patterns.
+    Returns deploy-ready recommendations with Chekk deploy commands.
+    """
+    global call_count
+    call_count += 1
+
+    result = {"test_remediations": [], "category_remediations": [], "deploy_ready": []}
+    all_repos = {}
+
+    if req.test_ids:
+        for test_id in req.test_ids:
+            rem = get_remediation_for_test(test_id)
+            if rem:
+                result["test_remediations"].append(rem)
+                for repo in rem.get("recommended_repos", []):
+                    name = repo.get("full_name", "")
+                    if name:
+                        all_repos[name] = repo
+
+    if req.categories:
+        for cat_id in req.categories:
+            rem = get_remediation_for_category(cat_id)
+            if rem:
+                result["category_remediations"].append(rem)
+                for repo in rem.get("recommended_repos", []):
+                    name = repo.get("full_name", "")
+                    if name:
+                        all_repos[name] = repo
+
+    # Top deploy-ready repos
+    sorted_repos = sorted(all_repos.values(), key=lambda r: r.get("stars", 0), reverse=True)
+    for repo in sorted_repos[:10]:
+        result["deploy_ready"].append({
+            "repo": repo["full_name"],
+            "url": repo.get("url", ""),
+            "stars": repo.get("stars", 0),
+            "description": repo.get("description", ""),
+            "deploy_url": "https://chekk-deploy-production.up.railway.app/api/v1/deploy",
+            "deploy_body": {"github_url": repo.get("url", "")},
+        })
+
+    return result
+
+
+@app.get("/api/results/{eval_id}/remediation")
+def get_eval_remediation(eval_id: str):
+    """Get remediation recommendations for a completed evaluation.
+
+    Searches GitHub for proven repos that fix each failed test.
+    Only works for completed evaluations.
+    """
+    if eval_id not in evaluations:
+        return JSONResponse(status_code=404, content={"error": "Evaluation not found"})
+
+    evaluation = evaluations[eval_id]
+    if evaluation["status"] != "completed":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Evaluation not yet completed", "status": evaluation["status"]},
+        )
+
+    return get_remediation_for_evaluation(evaluation["results"])
 
 
 @app.get("/api/results")
@@ -239,6 +323,7 @@ async def _run_evaluation(
     protocol: str,
     categories: list[str],
     timeout: float,
+    include_remediation: bool = True,
 ):
     """Run all requested test categories against the agent."""
     evaluation = evaluations[eval_id]
@@ -321,3 +406,7 @@ async def _run_evaluation(
         },
     }
     evaluation["duration_seconds"] = round(time.time() - evaluation["started_at"], 1)
+
+    # Attach remediation if requested and there are failures
+    if include_remediation and total_failed > 0:
+        evaluation["remediation"] = get_remediation_for_evaluation(all_scored)

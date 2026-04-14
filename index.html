@@ -336,6 +336,83 @@
   .endpoint .path { color: #ccc; }
   .endpoint .desc { color: #666; font-size: 0.7rem; margin-top: 0.3rem; }
 
+  /* ── Remediation Section ─────────────────────────── */
+  .remediation {
+    display: none;
+    margin-bottom: 2rem;
+    border-top: 1px solid #222;
+    padding-top: 1.5rem;
+  }
+  .remediation.visible { display: block; }
+  .remediation h2 {
+    font-size: 1rem;
+    color: #4ade80;
+    margin-bottom: 0.5rem;
+  }
+  .remediation .subtitle {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+  .repo-card {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 4px;
+    padding: 0.8rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .repo-info { flex: 1; }
+  .repo-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #60a5fa;
+  }
+  .repo-name a { color: #60a5fa; text-decoration: none; }
+  .repo-name a:hover { text-decoration: underline; }
+  .repo-desc {
+    font-size: 0.7rem;
+    color: #888;
+    margin-top: 0.2rem;
+    max-width: 600px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .repo-stars {
+    font-size: 0.7rem;
+    color: #fbbf24;
+    margin-top: 0.2rem;
+  }
+  .deploy-btn {
+    padding: 0.3rem 0.8rem;
+    background: #4ade8022;
+    border: 1px solid #4ade8044;
+    border-radius: 3px;
+    color: #4ade80;
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-left: 1rem;
+  }
+  .deploy-btn:hover { background: #4ade8033; }
+  .fix-hint {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 4px;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.75rem;
+    color: #aaa;
+    border-left: 3px solid #4ade80;
+  }
+  .fix-hint strong { color: #ccc; }
+
   footer {
     text-align: center;
     padding: 2rem 0;
@@ -387,6 +464,13 @@
     <div class="test-details" id="testDetails"></div>
   </div>
 
+  <!-- Remediation -->
+  <div class="remediation" id="remediation">
+    <h2>Recommended Fixes</h2>
+    <div class="subtitle">Battle-tested GitHub repos that solve the failures above. Deploy on Chekk to make them agent-callable.</div>
+    <div id="remediationContent"></div>
+  </div>
+
   <!-- API Reference -->
   <div class="api-ref">
     <h2>API Reference</h2>
@@ -409,6 +493,16 @@
       <span class="method get">GET</span>
       <span class="path">/api/categories</span>
       <div class="desc">List all test categories and their test cases.</div>
+    </div>
+    <div class="endpoint">
+      <span class="method post">POST</span>
+      <span class="path">/api/remediate</span>
+      <div class="desc">Find GitHub repos that fix specific test failures. Accepts test_ids or categories.</div>
+    </div>
+    <div class="endpoint">
+      <span class="method get">GET</span>
+      <span class="path">/api/results/{eval_id}/remediation</span>
+      <div class="desc">Get remediation recommendations for a completed evaluation.</div>
     </div>
     <div class="endpoint">
       <span class="method get">GET</span>
@@ -504,6 +598,9 @@ async function runGauntlet() {
     }
 
     renderScorecard(result);
+    if (result.remediation) {
+      renderRemediation(result.remediation);
+    }
 
   } catch (err) {
     alert('Error: ' + err.message);
@@ -582,6 +679,60 @@ function showTestDetails(catId, catData, label) {
 
   details.innerHTML = html;
   details.scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderRemediation(rem) {
+  const section = document.getElementById('remediation');
+  const content = document.getElementById('remediationContent');
+  section.classList.add('visible');
+
+  let html = '';
+
+  // Show per-failure integration hints
+  if (rem.failed_tests && rem.failed_tests.length > 0) {
+    for (const fix of rem.failed_tests) {
+      html += `<div class="fix-hint"><strong>${fix.failure_type}</strong>: ${escapeHtml(fix.integration_hint)}</div>`;
+    }
+  }
+
+  // Show deploy-ready repos
+  if (rem.deploy_ready && rem.deploy_ready.length > 0) {
+    html += '<div style="margin-top:0.5rem">';
+    for (const repo of rem.deploy_ready) {
+      html += `
+        <div class="repo-card">
+          <div class="repo-info">
+            <div class="repo-name"><a href="${escapeHtml(repo.url)}" target="_blank">${escapeHtml(repo.repo)}</a></div>
+            <div class="repo-desc">${escapeHtml(repo.description || 'No description')}</div>
+            <div class="repo-stars">${repo.stars.toLocaleString()} stars</div>
+          </div>
+          <button class="deploy-btn" onclick="deployRepo('${escapeHtml(repo.url)}')">Deploy on Chekk</button>
+        </div>
+      `;
+    }
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+}
+
+async function deployRepo(repoUrl) {
+  if (!confirm('Deploy ' + repoUrl + ' on Chekk?')) return;
+  try {
+    const resp = await fetch('https://chekk-deploy-production.up.railway.app/api/v1/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ github_url: repoUrl }),
+    });
+    const data = await resp.json();
+    if (data.id) {
+      alert('Deploy started! ID: ' + data.id + '\nCheck status at: /api/v1/deploy/' + data.id);
+    } else {
+      alert('Deploy response: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Deploy failed: ' + err.message);
+  }
 }
 
 function escapeHtml(str) {
