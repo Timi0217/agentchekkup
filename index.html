@@ -596,40 +596,58 @@
   <!-- API Reference -->
   <div class="api-ref">
     <h2>API Reference</h2>
+
+    <div style="font-size:0.7rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;font-weight:600">Evaluation</div>
     <div class="endpoint">
       <span class="method post">POST</span>
       <span class="path">/api/evaluate</span>
-      <div class="desc">Start async evaluation. Returns eval_id to poll for results.</div>
+      <div class="desc">Start async evaluation. Returns eval_id to poll. Body: {agent_url, protocol, categories?, timeout?, include_remediation?}</div>
     </div>
     <div class="endpoint">
       <span class="method post">POST</span>
       <span class="path">/api/evaluate/sync</span>
-      <div class="desc">Run evaluation synchronously. Blocks until complete.</div>
+      <div class="desc">Run evaluation synchronously. Blocks until complete. Returns full results with scorecard, remediation, and prescriptions.</div>
     </div>
+
+    <div style="font-size:0.7rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin:1rem 0 0.5rem;font-weight:600">Results</div>
     <div class="endpoint">
       <span class="method get">GET</span>
       <span class="path">/api/results/{eval_id}</span>
-      <div class="desc">Get results for a specific evaluation run.</div>
+      <div class="desc">Get results for a specific evaluation. Includes scorecard, per-test scores, remediation, deployed fixes, and prescriptions.</div>
     </div>
     <div class="endpoint">
       <span class="method get">GET</span>
-      <span class="path">/api/categories</span>
-      <div class="desc">List all test categories and their test cases.</div>
+      <span class="path">/api/results</span>
+      <div class="desc">List recent evaluation results. Query: ?limit=20. Returns eval_id, score, badge, duration for each.</div>
+    </div>
+
+    <div style="font-size:0.7rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin:1rem 0 0.5rem;font-weight:600">Remediation</div>
+    <div class="endpoint">
+      <span class="method get">GET</span>
+      <span class="path">/api/results/{eval_id}/remediation</span>
+      <div class="desc">Get remediation for a completed evaluation. Includes auto-deployed fixes with prescriptions (hook, API call, system prompt patch).</div>
     </div>
     <div class="endpoint">
       <span class="method post">POST</span>
       <span class="path">/api/remediate</span>
-      <div class="desc">Find GitHub repos that fix specific test failures. Accepts test_ids or categories.</div>
+      <div class="desc">Find GitHub repos that fix specific failures. Body: {test_ids?, categories?}. Returns deploy-ready repos with Chekk deploy commands.</div>
     </div>
+
+    <div style="font-size:0.7rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin:1rem 0 0.5rem;font-weight:600">Discovery</div>
     <div class="endpoint">
       <span class="method get">GET</span>
-      <span class="path">/api/results/{eval_id}/remediation</span>
-      <div class="desc">Get remediation recommendations for a completed evaluation.</div>
+      <span class="path">/api/categories</span>
+      <div class="desc">List all 6 test categories with test counts and severity levels.</div>
+    </div>
+    <div class="endpoint">
+      <span class="method post">POST</span>
+      <span class="path">/api/tests</span>
+      <div class="desc">List all 29 test cases with descriptions and check types. Body: {categories?} to filter.</div>
     </div>
     <div class="endpoint">
       <span class="method get">GET</span>
       <span class="path">/api/stats</span>
-      <div class="desc">Get gauntlet usage statistics.</div>
+      <div class="desc">Service stats: total evaluations, running count, completed count, agent calls.</div>
     </div>
   </div>
 
