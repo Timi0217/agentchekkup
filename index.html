@@ -457,6 +457,84 @@
     margin-top: 0.2rem;
   }
 
+  /* ── Prescription ─────────────────────────────────── */
+  .prescription {
+    margin-top: 0.6rem;
+    background: #0d1117;
+    border: 1px solid #1a2233;
+    border-radius: 4px;
+    padding: 0.6rem 0.8rem;
+  }
+  .prescription-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .prescription-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .prescription-hook {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 2px;
+    background: #a78bfa22;
+    color: #a78bfa;
+    font-weight: 600;
+  }
+  .prescription-desc {
+    font-size: 0.7rem;
+    color: #888;
+    margin-bottom: 0.4rem;
+  }
+  .prescription-api {
+    font-size: 0.7rem;
+    color: #60a5fa;
+    background: #0a0a0a;
+    border-radius: 3px;
+    padding: 0.3rem 0.5rem;
+    margin-bottom: 0.4rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .prompt-patch-label {
+    font-size: 0.65rem;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.2rem;
+    font-weight: 600;
+  }
+  .prompt-patch {
+    font-size: 0.7rem;
+    color: #ccc;
+    background: #0a0a0a;
+    border: 1px solid #1a2233;
+    border-radius: 3px;
+    padding: 0.5rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 160px;
+    overflow-y: auto;
+    line-height: 1.4;
+  }
+  .copy-btn {
+    padding: 0.15rem 0.5rem;
+    background: #a78bfa22;
+    border: 1px solid #a78bfa44;
+    border-radius: 2px;
+    color: #a78bfa;
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .copy-btn:hover { background: #a78bfa33; }
+
   footer {
     text-align: center;
     padding: 2rem 0;
@@ -751,6 +829,7 @@ function renderRemediation(rem) {
           <div class="deployed-fix-tests">Fixes: ${fix.fixes_tests ? fix.fixes_tests.join(', ') : 'N/A'}</div>
           ${fix.integration_hint ? `<div class="test-reason" style="margin-top:0.3rem">${escapeHtml(fix.integration_hint)}</div>` : ''}
           ${fix.error ? `<div class="test-reason" style="color:#ff6666;margin-top:0.3rem">Error: ${escapeHtml(fix.error)}</div>` : ''}
+          ${isLive && fix.prescription ? renderPrescription(fix.prescription, fix.fix_category) : ''}
         </div>
       `;
     }
@@ -783,6 +862,53 @@ function renderRemediation(rem) {
   }
 
   content.innerHTML = html;
+}
+
+function renderPrescription(rx, fixCategory) {
+  const hookLabel = {
+    pre_input: 'Before user input',
+    post_output: 'After agent output',
+    pre_tool: 'Before tool output reaches agent',
+    post_tool: 'After agent tool call',
+  };
+
+  const patchId = 'patch-' + fixCategory.replace(/\W/g, '-');
+  let html = '<div class="prescription">';
+  html += '<div class="prescription-header">';
+  html += '<span class="prescription-label">Prescription</span>';
+  html += `<span class="prescription-hook">${escapeHtml(hookLabel[rx.hook] || rx.hook)}</span>`;
+  html += '</div>';
+
+  if (rx.description) {
+    html += `<div class="prescription-desc">${escapeHtml(rx.description)}</div>`;
+  }
+
+  if (rx.api_call) {
+    html += `<div class="prescription-api">${escapeHtml(rx.api_call.method)} ${escapeHtml(rx.api_call.url)}</div>`;
+  }
+
+  if (rx.system_prompt_patch) {
+    html += '<div class="prompt-patch-label" style="display:flex;justify-content:space-between;align-items:center">';
+    html += '<span>Append to system prompt</span>';
+    html += `<button class="copy-btn" onclick="copyToClipboard('${patchId}')">Copy</button>`;
+    html += '</div>';
+    html += `<div class="prompt-patch" id="${patchId}">${escapeHtml(rx.system_prompt_patch)}</div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function copyToClipboard(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    const btn = el.previousElementSibling?.querySelector('.copy-btn');
+    if (btn) {
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    }
+  });
 }
 
 function escapeHtml(str) {
