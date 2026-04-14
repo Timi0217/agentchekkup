@@ -10,11 +10,13 @@ automatically and hands the manifest back. The agent being tested
 receives the fix ready to use — no human decision, no manual step.
 """
 
+import os
 import ssl
 import json
 import logging
 import threading
 import time
+import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
@@ -27,6 +29,10 @@ except ImportError:
     _SSL_CTX = ssl.create_default_context()
 
 CHEKK_DEPLOY_URL = "https://chekk-deploy-production.up.railway.app/api/v1"
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+# Rate-limit lock: serialize GitHub API calls across threads
+_github_lock = threading.Lock()
 
 
 # ── Failure → Search Mapping ────────────────────────────────────────
@@ -771,37 +777,59 @@ def generate_prescription(fix_category: str, deployed_url: str) -> dict:
 # ── GitHub Search ────────────────────────────────────────────────────
 
 def search_github_repos(query: str, max_results: int = 5) -> list[dict]:
-    """Search GitHub for repos matching the query, sorted by stars."""
+    """Search GitHub for repos matching the query, sorted by stars.
+
+    Uses GITHUB_TOKEN if available (30 req/min authenticated vs 10/min anon).
+    Retries once with backoff on 403 rate-limit responses.
+    Serializes calls via _github_lock to avoid hammering the API from
+    concurrent evaluation threads.
+    """
     encoded_query = urllib.parse.quote(query)
     url = f"https://api.github.com/search/repositories?q={encoded_query}&sort=stars&order=desc&per_page={max_results}"
 
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "AgentChekkup/1.0",
-        },
-    )
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "AgentChekkup/1.0",
+    }
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
 
-    try:
-        resp = urllib.request.urlopen(req, timeout=10, context=_SSL_CTX)
-        data = json.loads(resp.read())
-        repos = []
-        for item in data.get("items", [])[:max_results]:
-            repos.append({
-                "full_name": item["full_name"],
-                "description": item.get("description", ""),
-                "stars": item["stargazers_count"],
-                "language": item.get("language"),
-                "url": item["html_url"],
-                "topics": item.get("topics", []),
-                "updated_at": item.get("updated_at"),
-                "open_issues": item.get("open_issues_count", 0),
-                "license": (item.get("license") or {}).get("spdx_id"),
-            })
-        return repos
-    except Exception as e:
-        return [{"error": str(e)}]
+    for attempt in range(3):
+        with _github_lock:
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                resp = urllib.request.urlopen(req, timeout=15, context=_SSL_CTX)
+                data = json.loads(resp.read())
+                repos = []
+                for item in data.get("items", [])[:max_results]:
+                    repos.append({
+                        "full_name": item["full_name"],
+                        "description": item.get("description", ""),
+                        "stars": item["stargazers_count"],
+                        "language": item.get("language"),
+                        "url": item["html_url"],
+                        "topics": item.get("topics", []),
+                        "updated_at": item.get("updated_at"),
+                        "open_issues": item.get("open_issues_count", 0),
+                        "license": (item.get("license") or {}).get("spdx_id"),
+                    })
+                return repos
+            except urllib.error.HTTPError as e:
+                if e.code == 403:
+                    # Rate-limited — back off and retry
+                    retry_after = int(e.headers.get("Retry-After", 10))
+                    wait = min(retry_after, 30) * (attempt + 1)
+                    log.warning("GitHub rate-limited on query '%s', waiting %ds (attempt %d)", query, wait, attempt + 1)
+                    time.sleep(wait)
+                    continue
+                log.error("GitHub search error %d for '%s': %s", e.code, query, e.reason)
+                return []
+            except Exception as e:
+                log.error("GitHub search failed for '%s': %s", query, e)
+                return []
+
+    log.error("GitHub search exhausted retries for '%s'", query)
+    return []
 
 
 def get_remediation_for_test(test_id: str) -> Optional[dict]:
