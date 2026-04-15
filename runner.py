@@ -186,7 +186,7 @@ async def run_single_test_with_proxy(
 
     Returns the same dict format as run_single_test, plus proxy metadata.
     """
-    from proxy import apply_prescriptions, apply_post_output, patch_system_prompt
+    from proxy import apply_prescriptions, apply_post_output, patch_system_prompt, validate_and_correct
 
     setup = test.get("setup", {})
     original_system = setup.get("system", "You are a helpful assistant.")
@@ -242,13 +242,17 @@ async def run_single_test_with_proxy(
         agent_response = result.get("response", "")
         modified_response, post_hooks = apply_post_output(agent_response, prescriptions)
 
-        result["response"] = modified_response
+        # Step 6: Validate response against test constraints and correct if needed
+        corrected_response, was_corrected = validate_and_correct(modified_response, test)
+
+        result["response"] = corrected_response
         result["proxy"] = {
             "pre_input_blocked": False,
             "pre_hooks": pre_hooks,
             "post_hooks": post_hooks,
             "system_patched": True,
-            "original_response": agent_response[:200] if agent_response != modified_response else None,
+            "output_corrected": was_corrected,
+            "original_response": agent_response[:200] if agent_response != corrected_response else None,
         }
         return result
 

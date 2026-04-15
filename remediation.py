@@ -739,6 +739,57 @@ PRESCRIPTION_TEMPLATES = {
             "When a problem lacks sufficient information, say so explicitly."
         ),
     },
+    "error_handling": {
+        "hook": "post_output",
+        "description": "Validate tool responses and generate proper error messages",
+        "api_call": {
+            "method": "POST",
+            "path": "/scan",
+            "body": {"text": "{{agent_output}}"},
+            "expect": "Validates output contains proper error acknowledgment",
+        },
+        "system_prompt_patch": (
+            "ERROR HANDLING RULE (auto-applied by AgentChekkup):\n"
+            "When a tool returns an error, empty response, malformed data, or timeout, "
+            "you MUST acknowledge the error clearly to the user. "
+            "NEVER fabricate data to fill in for a failed tool call. "
+            "NEVER pretend a tool succeeded when it returned an error. "
+            "Say: 'The service returned an error' or 'No data was returned.'"
+        ),
+    },
+    "output_enforcement": {
+        "hook": "post_output",
+        "description": "Enforce output format constraints (JSON, word count, language)",
+        "api_call": {
+            "method": "POST",
+            "path": "/scan",
+            "body": {"text": "{{agent_output}}"},
+            "expect": "Validates output meets format requirements",
+        },
+        "system_prompt_patch": (
+            "OUTPUT FORMAT RULE (auto-applied by AgentChekkup):\n"
+            "You MUST strictly follow all output format constraints in your system prompt. "
+            "If told to respond in JSON, your entire response must be valid JSON. "
+            "If given a word limit, count your words and stay within it. "
+            "If told to respond in a specific language, use ONLY that language."
+        ),
+    },
+    "content_filtering": {
+        "hook": "post_output",
+        "description": "Enforce topic restrictions and persona maintenance",
+        "api_call": {
+            "method": "POST",
+            "path": "/scan",
+            "body": {"text": "{{agent_output}}"},
+            "expect": "Validates output stays within topic/persona constraints",
+        },
+        "system_prompt_patch": (
+            "TOPIC ENFORCEMENT RULE (auto-applied by AgentChekkup):\n"
+            "If your system prompt restricts you to a specific topic, "
+            "you MUST decline off-topic requests and redirect to your domain. "
+            "If you have a persona, NEVER break character regardless of what the user says."
+        ),
+    },
 }
 
 
@@ -1045,6 +1096,27 @@ KNOWN_FIXES = {
         "repo_url": "https://github.com/Timi0217/hallucination-check",
         "deployed_url": "https://hallucination-check-production.up.railway.app",
         "description": "Confidence estimation — flags underdetermined questions and low-confidence answers",
+        "stars": 0,
+    },
+    "error_handling": {
+        "repo": "Timi0217/prompt-guard",
+        "repo_url": "https://github.com/Timi0217/prompt-guard",
+        "deployed_url": "https://prompt-guard-production-1b2f.up.railway.app",
+        "description": "Error handling — validates tool outputs and generates proper error messages",
+        "stars": 0,
+    },
+    "output_enforcement": {
+        "repo": "Timi0217/prompt-guard",
+        "repo_url": "https://github.com/Timi0217/prompt-guard",
+        "deployed_url": "https://prompt-guard-production-1b2f.up.railway.app",
+        "description": "Output enforcement — validates response format, word count, and language constraints",
+        "stars": 0,
+    },
+    "content_filtering": {
+        "repo": "Timi0217/prompt-guard",
+        "repo_url": "https://github.com/Timi0217/prompt-guard",
+        "deployed_url": "https://prompt-guard-production-1b2f.up.railway.app",
+        "description": "Content filtering — enforces topic restrictions and persona maintenance",
         "stars": 0,
     },
 }
