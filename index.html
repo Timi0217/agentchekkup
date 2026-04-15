@@ -1994,7 +1994,7 @@ function renderStandaloneManifest(container, data, owner, repo) {
   if (data.framework) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Framework</span> <span style="color:#ccc;font-weight:600">${escapeHtml(data.framework)}</span></div>`;
   if (data.status) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Status</span> <span style="color:#4ade80;font-weight:600">${escapeHtml(data.status)}</span></div>`;
   if (data.routes) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Routes</span> <span style="color:#ccc;font-weight:600">${data.routes.length}</span></div>`;
-  if (data.deployed_url) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">URL</span> <a href="${escapeHtml(data.deployed_url)}" target="_blank" style="color:#60a5fa;text-decoration:none;font-weight:600">${escapeHtml(data.deployed_url.replace(/^https?:\\/\\//, ''))}</a></div>`;
+  if (data.deployed_url) { const shortUrl = data.deployed_url.replace('https://', '').replace('http://', ''); html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">URL</span> <a href="${escapeHtml(data.deployed_url)}" target="_blank" style="color:#60a5fa;text-decoration:none;font-weight:600">${escapeHtml(shortUrl)}</a></div>`; }
   html += '</div>';
 
   // Tabs
