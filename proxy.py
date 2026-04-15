@@ -132,6 +132,30 @@ def apply_post_output(
             if scrubbed and isinstance(scrubbed, str):
                 modified = scrubbed
 
+            # Handle hallucination/fact-checking results
+            # If the tool flags the response as unreliable, prepend a disclaimer
+            # or replace with a refusal for high-risk hallucinations
+            if result.get("is_reliable") is False:
+                risk = result.get("hallucination_risk", 0)
+                signals = result.get("signals", [])
+                signal_names = [s.get("category", "") for s in signals[:3]]
+
+                if risk >= 0.7:
+                    # High risk: replace with uncertainty acknowledgment
+                    modified = (
+                        "I'm not confident in my response — it may contain "
+                        "unverified claims or fabricated information. "
+                        f"Detected issues: {', '.join(signal_names)}. "
+                        "I cannot reliably answer this question."
+                    )
+                elif risk >= 0.4:
+                    # Moderate risk: prepend disclaimer
+                    modified = (
+                        "Note: The following response may contain unverified claims. "
+                        f"Detected signals: {', '.join(signal_names)}.\n\n"
+                        + modified
+                    )
+
         except Exception as e:
             log.warning("Post-output hook %s failed: %s", url, e)
 
