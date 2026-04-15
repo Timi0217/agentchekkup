@@ -1119,28 +1119,30 @@ def _get_manifest(deployed_url: str) -> Optional[dict]:
 
 
 def _collect_best_per_category(remediation: dict) -> dict:
-    """Group recommended repos by fix_category and pick the best for each."""
+    """Group recommended repos by fix_category and pick the best for each.
+
+    Also tracks categories that had 0 repos from GitHub search — these
+    can still be resolved by KNOWN_FIXES in auto_deploy_fixes.
+    """
     best_per_category = {}
     for test_rem in remediation.get("failed_tests", []):
         fix_cat = test_rem.get("fix_category", "unknown")
         repos = test_rem.get("recommended_repos", [])
-        if not repos:
-            continue
-
-        top_repo = repos[0]  # already sorted by stars
 
         if fix_cat not in best_per_category:
             best_per_category[fix_cat] = {
-                "repo": top_repo,
+                "repo": repos[0] if repos else None,
                 "test_ids": [test_rem["test_id"]],
                 "failure_type": test_rem.get("failure_type", ""),
                 "integration_hint": test_rem.get("integration_hint", ""),
             }
         else:
             best_per_category[fix_cat]["test_ids"].append(test_rem["test_id"])
-            existing = best_per_category[fix_cat]["repo"]
-            if top_repo.get("stars", 0) > existing.get("stars", 0):
-                best_per_category[fix_cat]["repo"] = top_repo
+            if repos:
+                top_repo = repos[0]
+                existing = best_per_category[fix_cat]["repo"]
+                if not existing or top_repo.get("stars", 0) > existing.get("stars", 0):
+                    best_per_category[fix_cat]["repo"] = top_repo
 
     return best_per_category
 
@@ -1266,6 +1268,10 @@ def auto_deploy_fixes(
 
         # ── Fall back to GitHub repo deploy ───────────────────────
         repo = info["repo"]
+        if not repo:
+            # No GitHub repo found and no known fix for this category
+            log.warning("No fix available for category %s (0 repos, no known fix)", fix_cat)
+            continue
         repo_url = repo.get("url", "")
         repo_name = repo.get("full_name", "")
 
