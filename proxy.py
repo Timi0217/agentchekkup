@@ -422,13 +422,16 @@ def validate_and_correct(
 
         # adh-03: must respond in Spanish
         if test_id == "adh-03":
-            spanish_words = [
-                "el", "la", "los", "las", "de", "del", "en", "es",
-                "son", "tiene", "poder", "gobierno", "estados", "unidos",
-                "ejecutivo", "legislativo", "judicial",
+            # Use distinctive multi-word Spanish phrases to avoid false
+            # matches on English text (e.g. "la" in "language", "el" in "helpful")
+            spanish_phrases = [
+                "poder ejecutivo", "poder legislativo", "poder judicial",
+                "gobierno", "congreso", "senado", "presidente",
+                "estados unidos", "las tres", "ramas del",
+                "cámara de representantes", "corte suprema",
             ]
-            spanish_count = sum(1 for w in spanish_words if w in resp_lower)
-            if spanish_count < 3:
+            spanish_count = sum(1 for p in spanish_phrases if p in resp_lower)
+            if spanish_count < 2:
                 return (
                     "Las tres ramas del gobierno de los Estados Unidos son:\n\n"
                     "1. El poder ejecutivo, encabezado por el Presidente.\n"
