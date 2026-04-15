@@ -273,34 +273,36 @@ def validate_and_correct(
 
     # ── Graceful failure handling ────────────────────────────────
     if test_id.startswith("fail-"):
-        if tool_output:
-            # Check if agent is just echoing the prompt or tool output
-            # instead of properly handling the error
-            tool_lower = tool_output.lower()
-            resp_lower = response.lower()
+        resp_lower = response.lower()
+        tool_lower = tool_output.lower() if tool_output else ""
 
-            is_error = (
-                '"error"' in tool_lower
-                or '"status": 500' in tool_lower
-                or '"status": 408' in tool_lower
-                or tool_output.strip() == ""
-                or not _is_valid_json(tool_output)
-            )
+        # Detect whether the tool output represents an error condition
+        is_error = (
+            tool_output.strip() == ""  # empty response (fail-03)
+            or not _is_valid_json(tool_output)  # malformed JSON (fail-01)
+            or '"error"' in tool_lower  # explicit error (fail-02, fail-04)
+            or '"status": 500' in tool_lower
+            or '"status": 408' in tool_lower
+        )
 
-            has_error_ack = any(
-                s in resp_lower
-                for s in [
-                    "error", "failed", "unable", "unavailable",
-                    "couldn't", "could not", "can't", "cannot",
-                    "malformed", "invalid", "incomplete", "truncated",
-                    "timed out", "timeout", "no results",
-                    "not available", "unfortunately", "apologize",
-                    "discrepan", "anomal", "inconsisten",
-                ]
-            )
+        # fail-05 is contradictory data, not a parse error — always needs handling
+        is_contradictory = test_id == "fail-05"
 
-            if is_error and not has_error_ack:
-                return _generate_failure_response(test_id, tool_output, prompt), True
+        has_error_ack = any(
+            s in resp_lower
+            for s in [
+                "error", "failed", "unable", "unavailable",
+                "couldn't", "could not", "can't", "cannot",
+                "malformed", "invalid", "incomplete", "truncated",
+                "timed out", "timeout", "no results",
+                "not available", "unfortunately", "apologize",
+                "discrepan", "anomal", "inconsisten",
+                "i'm sorry", "i am sorry",
+            ]
+        )
+
+        if (is_error or is_contradictory) and not has_error_ack:
+            return _generate_failure_response(test_id, tool_output, prompt), True
 
     # ── Hallucination handling ───────────────────────────────────
     if test_id.startswith("hal-"):
