@@ -1053,6 +1053,25 @@
     </div>
   </div>
 
+  <!-- Manifest Lookup -->
+  <div class="api-ref" id="manifestLookup">
+    <h2>Service Manifests</h2>
+    <div style="font-size:0.75rem;color:#888;margin-bottom:1rem">
+      View the agent manifest for any service deployed on Chekk. Shows detected routes and generated llms.txt.
+    </div>
+    <div class="input-row" style="margin-bottom:0.75rem">
+      <input type="text" id="manifestInput" placeholder="owner/repo (e.g. Timi0217/prompt-guard)" style="flex:1;background:#0a0a0a;border:1px solid #333;border-radius:4px;padding:0.6rem 0.8rem;color:#e0e0e0;font-family:inherit;font-size:0.85rem" />
+      <button onclick="lookupManifest()" style="padding:0.6rem 1.2rem;background:#60a5fa22;border:1px solid #60a5fa44;border-radius:4px;color:#60a5fa;font-family:inherit;font-size:0.8rem;font-weight:600;cursor:pointer;text-transform:uppercase;white-space:nowrap">Lookup</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:1rem" id="manifestQuickPicks">
+      <button class="cat-toggle active" style="border-color:#60a5fa44;color:#60a5fa;background:#60a5fa11;font-size:0.7rem" onclick="lookupQuick('Timi0217/prompt-guard')">prompt-guard</button>
+      <button class="cat-toggle active" style="border-color:#60a5fa44;color:#60a5fa;background:#60a5fa11;font-size:0.7rem" onclick="lookupQuick('Timi0217/pii-scrubber')">pii-scrubber</button>
+      <button class="cat-toggle active" style="border-color:#60a5fa44;color:#60a5fa;background:#60a5fa11;font-size:0.7rem" onclick="lookupQuick('Timi0217/hallucination-check')">hallucination-check</button>
+      <button class="cat-toggle active" style="border-color:#60a5fa44;color:#60a5fa;background:#60a5fa11;font-size:0.7rem" onclick="lookupQuick('Timi0217/agentchekkup')">agentchekkup</button>
+    </div>
+    <div id="manifestResult"></div>
+  </div>
+
   <footer>
     AgentChekkup &middot; built on Chekk &middot; adversarial testing as a service
   </footer>
@@ -1927,6 +1946,78 @@ function switchManifestTab(tabId, tabName, btn) {
   btn.classList.add('active');
   const target = document.getElementById(`mtab-${tabId}-${tabName}`);
   if (target) target.classList.add('active');
+}
+
+// ── Standalone Manifest Lookup ───────────────────────────────────
+
+function lookupQuick(ownerRepo) {
+  document.getElementById('manifestInput').value = ownerRepo;
+  lookupManifest();
+}
+
+async function lookupManifest() {
+  const input = document.getElementById('manifestInput').value.trim();
+  if (!input || !input.includes('/')) return alert('Enter owner/repo (e.g. Timi0217/prompt-guard)');
+
+  const [owner, repo] = input.split('/');
+  const container = document.getElementById('manifestResult');
+  container.innerHTML = '<div style="text-align:center;padding:1rem;color:#555;font-size:0.8rem"><span class="spinner"></span> Loading manifest...</div>';
+
+  try {
+    const resp = await fetch(`/api/manifest/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    renderStandaloneManifest(container, data, owner, repo);
+  } catch (err) {
+    container.innerHTML = `<div style="text-align:center;padding:1rem;color:#ff6666;font-size:0.8rem">Failed to load manifest: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderStandaloneManifest(container, data, owner, repo) {
+  let html = '';
+
+  // Meta bar
+  html += '<div style="display:flex;gap:1rem;flex-wrap:wrap;padding:0.6rem 0.8rem;background:#111;border:1px solid #222;border-radius:6px 6px 0 0;font-size:0.75rem;color:#888">';
+  html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Service</span> <span style="color:#60a5fa;font-weight:600">${escapeHtml(owner)}/${escapeHtml(repo)}</span></div>`;
+  if (data.framework) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Framework</span> <span style="color:#ccc;font-weight:600">${escapeHtml(data.framework)}</span></div>`;
+  if (data.status) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Status</span> <span style="color:#4ade80;font-weight:600">${escapeHtml(data.status)}</span></div>`;
+  if (data.routes) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">Routes</span> <span style="color:#ccc;font-weight:600">${data.routes.length}</span></div>`;
+  if (data.deployed_url) html += `<div><span style="color:#555;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.04em">URL</span> <a href="${escapeHtml(data.deployed_url)}" target="_blank" style="color:#60a5fa;text-decoration:none;font-weight:600">${escapeHtml(data.deployed_url.replace(/^https?:\\/\\//, ''))}</a></div>`;
+  html += '</div>';
+
+  // Tabs
+  const tabId = `sl-${owner}-${repo}`.replace(/[^a-zA-Z0-9-]/g, '-');
+  html += '<div style="display:flex;border-bottom:1px solid #222;background:#0d1117">';
+  html += `<button class="manifest-tab active" onclick="switchManifestTab('${tabId}','routes',this)" style="padding:0.4rem 0.8rem;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#60a5fa;cursor:pointer;border:none;background:transparent;font-family:inherit;border-bottom:2px solid #60a5fa">Routes</button>`;
+  html += `<button class="manifest-tab" onclick="switchManifestTab('${tabId}','llms',this)" style="padding:0.4rem 0.8rem;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#666;cursor:pointer;border:none;background:transparent;font-family:inherit;border-bottom:2px solid transparent">llms.txt</button>`;
+  html += '</div>';
+
+  // Routes tab
+  html += `<div class="manifest-tab-content active" id="mtab-${tabId}-routes" style="display:block;background:#0d1117;border:1px solid #222;border-top:none;border-radius:0 0 6px 6px;max-height:360px;overflow-y:auto">`;
+  if (data.routes && data.routes.length > 0) {
+    for (const route of data.routes) {
+      const methodClass = (route.method || 'GET').toLowerCase();
+      html += '<div class="manifest-route" style="display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;border-bottom:1px solid #111827;font-size:0.8rem">';
+      html += `<span class="method ${methodClass}" style="display:inline-block;padding:0.1rem 0.35rem;border-radius:2px;font-weight:700;font-size:0.6rem;min-width:36px;text-align:center">${escapeHtml(route.method || 'GET')}</span>`;
+      html += `<span style="color:#e0e0e0;font-family:monospace">${escapeHtml(route.path)}</span>`;
+      if (route.handler) html += `<span style="color:#555;font-size:0.65rem;margin-left:auto">${escapeHtml(route.handler)}</span>`;
+      html += '</div>';
+    }
+  } else {
+    html += '<div style="color:#555;font-size:0.75rem;padding:1rem;text-align:center">No routes detected</div>';
+  }
+  html += '</div>';
+
+  // llms.txt tab (hidden by default)
+  html += `<div class="manifest-tab-content" id="mtab-${tabId}-llms" style="display:none;background:#0d1117;border:1px solid #222;border-top:none;border-radius:0 0 6px 6px;max-height:360px;overflow-y:auto">`;
+  if (data.llms_txt) {
+    html += `<div style="padding:0.8rem;font-size:0.75rem;color:#ccc;white-space:pre-wrap;word-break:break-word;line-height:1.5;font-family:monospace">${escapeHtml(data.llms_txt)}</div>`;
+  } else {
+    html += '<div style="color:#555;font-size:0.75rem;padding:1rem;text-align:center">No llms.txt generated</div>';
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
 }
 
 // ── Init ─────────────────────────────────────────────────────────
