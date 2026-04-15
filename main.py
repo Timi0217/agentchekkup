@@ -528,9 +528,15 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     if url:
         session["agent_url"] = url
 
-    cats = _extract_categories_from_text(user_msg)
+    # Extract categories from text, but strip URLs first so "leaky-agent" in
+    # a URL doesn't falsely match "leak" → pii_leakage
+    text_for_categories = re.sub(r'https?://[^\s]+', '', user_msg)
+    cats = _extract_categories_from_text(text_for_categories)
     if cats:
-        session["categories"] = cats
+        # Merge with existing categories rather than replacing
+        existing = set(session["categories"] or [])
+        existing.update(cats)
+        session["categories"] = list(existing)
 
     # ── Check for protocol mentions ────────────────────────────────
     msg_lower = user_msg.lower()
