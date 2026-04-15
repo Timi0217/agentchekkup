@@ -1903,9 +1903,6 @@ function renderManifestPanel(panel, data, fixSlug) {
   html += '<div class="manifest-tabs">';
   html += `<button class="manifest-tab active" onclick="switchManifestTab('${tabId}','routes',this)">Routes</button>`;
   html += `<button class="manifest-tab" onclick="switchManifestTab('${tabId}','llms',this)">llms.txt</button>`;
-  if (data.llms_txt) {
-    html += `<button onclick="downloadLlmsTxt('${tabId}','llms.txt')" style="margin-left:auto;padding:0.15rem 0.5rem;background:#1a2233;border:1px solid #334155;border-radius:2px;color:#60a5fa;font-family:inherit;font-size:0.6rem;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:0.03em;transition:background 0.15s" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#1a2233'">Download</button>`;
-  }
   html += '</div>';
 
   // Routes tab
@@ -1929,6 +1926,9 @@ function renderManifestPanel(panel, data, fixSlug) {
   // llms.txt tab
   html += `<div class="manifest-tab-content" id="mtab-${tabId}-llms">`;
   if (data.llms_txt) {
+    html += `<div style="display:flex;justify-content:flex-end;padding:0.4rem 0.6rem;border-bottom:1px solid #1a2233">`;
+    html += `<button onclick="downloadLlmsTxt('${tabId}','llms.txt')" style="padding:0.25rem 0.6rem;background:#1a2233;border:1px solid #334155;border-radius:3px;color:#60a5fa;font-family:inherit;font-size:0.65rem;font-weight:600;cursor:pointer;letter-spacing:0.03em;transition:background 0.15s" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#1a2233'">Download .txt</button>`;
+    html += `</div>`;
     html += `<div class="manifest-llms">${escapeHtml(data.llms_txt)}</div>`;
   } else {
     html += '<div style="color:#555;font-size:0.75rem;padding:0.5rem 0">No llms.txt generated</div>';
@@ -2019,9 +2019,6 @@ function renderStandaloneManifest(container, data, owner, repo) {
   html += '<div style="display:flex;border-bottom:1px solid #222;background:#0d1117">';
   html += `<button class="manifest-tab active" onclick="switchManifestTab('${tabId}','routes',this)" style="padding:0.4rem 0.8rem;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#60a5fa;cursor:pointer;border:none;background:transparent;font-family:inherit;border-bottom:2px solid #60a5fa">Routes</button>`;
   html += `<button class="manifest-tab" onclick="switchManifestTab('${tabId}','llms',this)" style="padding:0.4rem 0.8rem;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#666;cursor:pointer;border:none;background:transparent;font-family:inherit;border-bottom:2px solid transparent">llms.txt</button>`;
-  if (data.llms_txt) {
-    html += `<button onclick="downloadLlmsTxt('${tabId}','${escapeHtml(repo)}-llms.txt')" style="margin-left:auto;padding:0.25rem 0.6rem;background:#1a2233;border:1px solid #334155;border-radius:2px;color:#60a5fa;font-family:inherit;font-size:0.6rem;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:0.03em;transition:background 0.15s;align-self:center" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#1a2233'">Download llms.txt</button>`;
-  }
   html += '</div>';
 
   // Routes tab
@@ -2043,6 +2040,9 @@ function renderStandaloneManifest(container, data, owner, repo) {
   // llms.txt tab (hidden by default)
   html += `<div class="manifest-tab-content" id="mtab-${tabId}-llms" style="display:none;background:#0d1117;border:1px solid #222;border-top:none;border-radius:0 0 6px 6px;max-height:360px;overflow-y:auto">`;
   if (data.llms_txt) {
+    html += `<div style="display:flex;justify-content:flex-end;padding:0.5rem 0.8rem;border-bottom:1px solid #1a2233">`;
+    html += `<button onclick="downloadLlmsTxt('${tabId}','${escapeHtml(repo)}-llms.txt')" style="padding:0.3rem 0.75rem;background:#1a2233;border:1px solid #334155;border-radius:3px;color:#60a5fa;font-family:inherit;font-size:0.7rem;font-weight:600;cursor:pointer;letter-spacing:0.03em;transition:background 0.15s" onmouseover="this.style.background='#1e3a5f'" onmouseout="this.style.background='#1a2233'">Download .txt</button>`;
+    html += `</div>`;
     html += `<div style="padding:0.8rem;font-size:0.75rem;color:#ccc;white-space:pre-wrap;word-break:break-word;line-height:1.5;font-family:monospace">${escapeHtml(data.llms_txt)}</div>`;
   } else {
     html += '<div style="color:#555;font-size:0.75rem;padding:1rem;text-align:center">No llms.txt generated</div>';
