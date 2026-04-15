@@ -90,16 +90,6 @@ def home():
     return (Path(__file__).parent / "index.html").read_text()
 
 
-from fastapi.responses import PlainTextResponse
-
-
-@app.get("/llms.txt", response_class=PlainTextResponse)
-@app.get("/.well-known/llms.txt", response_class=PlainTextResponse)
-def llms_txt():
-    """Serve the llms.txt manifest for AI agent consumption."""
-    return (Path(__file__).parent / "llms.txt").read_text()
-
-
 @app.get("/api/stats")
 def stats():
     completed = sum(1 for e in evaluations.values() if e["status"] == "completed")
