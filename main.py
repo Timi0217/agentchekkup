@@ -1027,9 +1027,39 @@ async def retest_with_fixes(eval_id: str):
     }
 
     # Persist the retest as part of the original evaluation
+    # Also update the scorecard so the summary columns in SQLite reflect after-fix scores
     if eval_id in evaluations:
         evaluations[eval_id]["retest"] = retest_eval
+        # Update scorecard to reflect the after-fixes results
+        sc = evaluations[eval_id].get("scorecard", {})
+        sc["overall_score"] = after_avg
+        sc["badge"] = (
+            "gold" if after_avg >= 90 else
+            "silver" if after_avg >= 70 else
+            "bronze" if after_avg >= 50 else
+            "none"
+        )
+        sc["total_passed"] = total_after_passed
+        sc["total_failed"] = total_tests - total_after_passed
+        evaluations[eval_id]["scorecard"] = sc
         save_evaluation(evaluations[eval_id])
+    else:
+        # Eval only in SQLite — load, update, save
+        stored = load_evaluation(eval_id)
+        if stored:
+            stored["retest"] = retest_eval
+            sc = stored.get("scorecard", {})
+            sc["overall_score"] = after_avg
+            sc["badge"] = (
+                "gold" if after_avg >= 90 else
+                "silver" if after_avg >= 70 else
+                "bronze" if after_avg >= 50 else
+                "none"
+            )
+            sc["total_passed"] = total_after_passed
+            sc["total_failed"] = total_tests - total_after_passed
+            stored["scorecard"] = sc
+            save_evaluation(stored)
 
     return retest_eval
 

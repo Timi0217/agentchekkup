@@ -98,7 +98,7 @@ def list_evaluations(limit: int = 50, offset: int = 0) -> list[dict]:
         """
         SELECT eval_id, agent_url, status, overall_score, badge,
                total_passed, total_failed, total_tests,
-               duration_secs, started_at
+               duration_secs, started_at, data
         FROM evaluations
         ORDER BY started_at DESC
         LIMIT ? OFFSET ?
@@ -106,8 +106,9 @@ def list_evaluations(limit: int = 50, offset: int = 0) -> list[dict]:
         (limit, offset),
     ).fetchall()
 
-    return [
-        {
+    results = []
+    for r in rows:
+        entry = {
             "eval_id": r["eval_id"],
             "agent_url": r["agent_url"],
             "status": r["status"],
@@ -119,8 +120,20 @@ def list_evaluations(limit: int = 50, offset: int = 0) -> list[dict]:
             "duration_seconds": r["duration_secs"],
             "started_at": r["started_at"],
         }
-        for r in rows
-    ]
+        # Check if retest data exists — if so, surface the after-fix score
+        try:
+            data = json.loads(r["data"])
+            retest = data.get("retest")
+            if retest:
+                summary = retest.get("summary", {})
+                entry["has_retest"] = True
+                entry["before_score"] = summary.get("before_score", entry["overall_score"])
+                entry["after_score"] = summary.get("after_score")
+                entry["tests_fixed"] = summary.get("tests_fixed", 0)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        results.append(entry)
+    return results
 
 
 def update_evaluation_fixes(eval_id: str, remediation: dict):

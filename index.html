@@ -1140,13 +1140,19 @@ function renderPastResults(evals) {
   html += '</tr></thead><tbody>';
 
   for (const e of evals) {
+    // Use after-fix score if retest exists
+    const displayScore = e.has_retest && e.after_score != null ? e.after_score : e.overall_score;
+    const displayBadge = e.has_retest && e.after_score != null
+      ? (e.after_score >= 90 ? 'gold' : e.after_score >= 70 ? 'silver' : e.after_score >= 50 ? 'bronze' : 'none')
+      : (e.badge || 'none');
+
     const scoreClass = e.status !== 'completed' ? '' :
-      (e.overall_score >= 80 ? 'pass' : e.overall_score >= 50 ? 'warn' : 'fail');
+      (displayScore >= 80 ? 'pass' : displayScore >= 50 ? 'warn' : 'fail');
 
     const agentShort = (e.agent_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    const badgeClass = e.status !== 'completed' ? 'running' : (e.badge || 'none');
-    const badgeLabel = e.status !== 'completed' ? e.status : (e.badge === 'none' ? '--' : e.badge || '--');
+    const badgeClass = e.status !== 'completed' ? 'running' : displayBadge;
+    const badgeLabel = e.status !== 'completed' ? e.status : (displayBadge === 'none' ? '--' : displayBadge);
 
     const passedStr = e.total_passed != null ? `${e.total_passed}/${e.total_tests}` : '--';
     const durationStr = e.duration_seconds != null ? `${e.duration_seconds}s` : '--';
@@ -1157,9 +1163,19 @@ function renderPastResults(evals) {
         })
       : '--';
 
+    // Score display: show "before → after" if retested
+    let scoreHtml;
+    if (e.status !== 'completed') {
+      scoreHtml = '--';
+    } else if (e.has_retest && e.after_score != null) {
+      scoreHtml = `<span style="color:#666;font-size:0.65rem;text-decoration:line-through">${e.before_score}</span> ${e.after_score}`;
+    } else {
+      scoreHtml = `${displayScore}`;
+    }
+
     html += `<tr onclick="loadEvaluation('${escapeHtml(e.eval_id)}')">`;
     html += `<td class="agent-url-cell" title="${escapeHtml(e.agent_url || '')}">${escapeHtml(agentShort)}</td>`;
-    html += `<td class="score-cell ${scoreClass}">${e.status === 'completed' ? e.overall_score : '--'}</td>`;
+    html += `<td class="score-cell ${scoreClass}">${scoreHtml}</td>`;
     html += `<td><span class="past-badge ${badgeClass}">${badgeLabel}</span></td>`;
     html += `<td>${passedStr}</td>`;
     html += `<td>${durationStr}</td>`;
@@ -1179,7 +1195,15 @@ async function loadEvaluation(evalId) {
 
     if (result.status === 'completed') {
       renderScorecard(result);
-      if (result.remediation) {
+
+      // If retest already happened, show after-fixes view immediately
+      if (result.retest) {
+        renderRetestComparison(result.retest);
+        updateScorecardWithFixes(result.retest);
+        if (result.remediation) {
+          renderRemediation(result.remediation);
+        }
+      } else if (result.remediation) {
         renderRemediation(result.remediation);
         // Check if all fixes are already live — if so, auto-retest
         const allLive = (result.remediation.deployed_fixes || []).every(f => f.status === 'live');
