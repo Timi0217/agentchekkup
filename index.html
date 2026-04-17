@@ -209,7 +209,7 @@
   .past-badge.none { background: #ff444422; color: #ff4444; }
   .past-badge.running { background: #60a5fa22; color: #60a5fa; }
   .agent-url-cell {
-    max-width: 300px;
+    max-width: 250px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -222,6 +222,18 @@
     background: #111;
     border: 1px solid #222;
     border-radius: 6px;
+  }
+  .fix-arrow { color: #666; margin: 0 0.25rem; }
+  .fix-before { color: #ff4444; text-decoration: line-through; font-size: 0.65rem; }
+  .fix-after { color: #4ade80; font-weight: 700; }
+  .fix-delta { font-size: 0.6rem; color: #4ade80; margin-left: 0.25rem; }
+  .fix-tag {
+    display: inline-block; font-size: 0.55rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 0.1rem 0.35rem; border-radius: 2px;
+    background: rgba(74,222,128,0.1); color: #4ade80;
+    border: 1px solid rgba(74,222,128,0.2); margin-left: 0.4rem;
+    vertical-align: middle;
   }
 
   /* ── Scorecard ─────────────────────────────────────── */
@@ -1136,13 +1148,13 @@ function renderPastResults(evals) {
   countEl.textContent = `(${evals.length})`;
 
   let html = '<table class="past-table"><thead><tr>';
-  html += '<th>Agent</th><th>Score</th><th>Badge</th><th>Tests</th><th>Duration</th><th>Date</th>';
+  html += '<th>Agent</th><th>Score</th><th>Badge</th><th>Tests</th><th>Date</th>';
   html += '</tr></thead><tbody>';
 
   for (const e of evals) {
-    // Use after-fix score if retest exists
-    const displayScore = e.has_retest && e.after_score != null ? e.after_score : e.overall_score;
-    const displayBadge = e.has_retest && e.after_score != null
+    const hasRetest = e.has_retest && e.after_score != null;
+    const displayScore = hasRetest ? e.after_score : e.overall_score;
+    const displayBadge = hasRetest
       ? (e.after_score >= 90 ? 'gold' : e.after_score >= 70 ? 'silver' : e.after_score >= 50 ? 'bronze' : 'none')
       : (e.badge || 'none');
 
@@ -1155,7 +1167,6 @@ function renderPastResults(evals) {
     const badgeLabel = e.status !== 'completed' ? e.status : (displayBadge === 'none' ? '--' : displayBadge);
 
     const passedStr = e.total_passed != null ? `${e.total_passed}/${e.total_tests}` : '--';
-    const durationStr = e.duration_seconds != null ? `${e.duration_seconds}s` : '--';
 
     const dateStr = e.started_at
       ? new Date(e.started_at * 1000).toLocaleString(undefined, {
@@ -1163,22 +1174,31 @@ function renderPastResults(evals) {
         })
       : '--';
 
-    // Score display: show "before → after" if retested
+    // Score display: show before → after with delta if retested
     let scoreHtml;
     if (e.status !== 'completed') {
       scoreHtml = '--';
-    } else if (e.has_retest && e.after_score != null) {
-      scoreHtml = `<span style="color:#666;font-size:0.65rem;text-decoration:line-through">${e.before_score}</span> ${e.after_score}`;
+    } else if (hasRetest) {
+      const delta = e.after_score - e.before_score;
+      scoreHtml = `<span class="fix-before">${e.before_score}</span>`
+        + `<span class="fix-arrow">\u2192</span>`
+        + `<span class="fix-after">${e.after_score}</span>`
+        + `<span class="fix-delta">+${delta}</span>`;
     } else {
       scoreHtml = `${displayScore}`;
+    }
+
+    // Badge: show "FIXED" tag if retested
+    let badgeHtml = `<span class="past-badge ${badgeClass}">${badgeLabel}</span>`;
+    if (hasRetest) {
+      badgeHtml += `<span class="fix-tag">${e.tests_fixed || 0} fixed</span>`;
     }
 
     html += `<tr onclick="loadEvaluation('${escapeHtml(e.eval_id)}')">`;
     html += `<td class="agent-url-cell" title="${escapeHtml(e.agent_url || '')}">${escapeHtml(agentShort)}</td>`;
     html += `<td class="score-cell ${scoreClass}">${scoreHtml}</td>`;
-    html += `<td><span class="past-badge ${badgeClass}">${badgeLabel}</span></td>`;
+    html += `<td>${badgeHtml}</td>`;
     html += `<td>${passedStr}</td>`;
-    html += `<td>${durationStr}</td>`;
     html += `<td>${dateStr}</td>`;
     html += '</tr>';
   }
