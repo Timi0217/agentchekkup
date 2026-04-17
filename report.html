@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentChekkup Report</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* Header */
+  .report-header {
+    text-align: center;
+    padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #222;
+    margin-bottom: 2rem;
+  }
+  .report-header .brand {
+    font-size: 0.65rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.5rem;
+  }
+  .report-header .brand a {
+    color: #ff4444;
+    text-decoration: none;
+  }
+  .report-header h1 {
+    font-size: 1.1rem;
+    color: #ccc;
+    font-weight: 600;
+    word-break: break-all;
+  }
+  .report-header .eval-meta {
+    font-size: 0.7rem;
+    color: #555;
+    margin-top: 0.5rem;
+  }
+
+  /* Score hero */
+  .score-hero {
+    text-align: center;
+    padding: 2rem 0;
+    margin-bottom: 1.5rem;
+  }
+  .score-big {
+    font-size: 5rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .score-big.gold { color: #daa520; }
+  .score-big.silver { color: #c0c0c0; }
+  .score-big.bronze { color: #cd7f32; }
+  .score-big.none { color: #ff4444; }
+
+  .score-label {
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.5rem;
+  }
+
+  .badge-pill {
+    display: inline-block;
+    padding: 0.3rem 1rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.75rem;
+  }
+  .badge-pill.gold { background: #b8860b22; color: #daa520; border: 1px solid #b8860b44; }
+  .badge-pill.silver { background: #c0c0c022; color: #c0c0c0; border: 1px solid #c0c0c044; }
+  .badge-pill.bronze { background: #cd7f3222; color: #cd7f32; border: 1px solid #cd7f3244; }
+  .badge-pill.none { background: #ff444422; color: #ff4444; border: 1px solid #ff444444; }
+
+  /* Before/After flow */
+  .fix-flow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1.5rem;
+    margin-top: 1.25rem;
+  }
+  .fix-flow .before {
+    text-align: center;
+  }
+  .fix-flow .before .value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #ff4444;
+    text-decoration: line-through;
+    line-height: 1;
+  }
+  .fix-flow .before .label {
+    font-size: 0.6rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .fix-flow .arrow {
+    font-size: 1.5rem;
+    color: #4ade80;
+  }
+  .fix-flow .after {
+    text-align: center;
+  }
+  .fix-flow .after .value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #4ade80;
+    line-height: 1;
+  }
+  .fix-flow .after .label {
+    font-size: 0.6rem;
+    color: #4ade80;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .stats-line {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 0.75rem;
+  }
+  .stats-line .fixed {
+    color: #4ade80;
+    font-weight: 600;
+  }
+
+  /* Category grid */
+  .section-title {
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+  }
+  .cat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+  }
+  .cat-card {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 6px;
+    padding: 1rem;
+  }
+  .cat-card.improved {
+    border-color: #4ade8033;
+  }
+  .cat-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .cat-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #ccc;
+  }
+  .cat-score {
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+  .cat-score.pass { color: #4ade80; }
+  .cat-score.warn { color: #fbbf24; }
+  .cat-score.fail { color: #ff4444; }
+
+  .cat-bar {
+    width: 100%;
+    height: 3px;
+    background: #222;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 0.4rem;
+  }
+  .cat-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+  .cat-bar-fill.pass { background: #4ade80; }
+  .cat-bar-fill.warn { background: #fbbf24; }
+  .cat-bar-fill.fail { background: #ff4444; }
+
+  .cat-meta {
+    font-size: 0.7rem;
+    color: #888;
+  }
+  .cat-delta {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 600;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 2px;
+  }
+  .cat-delta.positive { color: #4ade80; background: #4ade8011; }
+  .cat-delta.negative { color: #ff4444; }
+
+  .cat-flow {
+    font-size: 0.65rem;
+    color: #888;
+    margin-top: 0.3rem;
+  }
+  .cat-flow .b { color: #ff6666; }
+  .cat-flow .a { color: #4ade80; font-weight: 600; }
+
+  /* Fixes section */
+  .fixes-section {
+    margin-bottom: 2rem;
+  }
+  .fix-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 4px;
+    margin-bottom: 0.4rem;
+    font-size: 0.8rem;
+  }
+  .fix-status {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0.15rem 0.4rem;
+    border-radius: 2px;
+  }
+  .fix-status.live { color: #4ade80; background: #4ade8015; }
+  .fix-status.failed { color: #ff4444; background: #ff444415; }
+  .fix-status.timeout { color: #fbbf24; background: #fbbf2415; }
+  .fix-repo { color: #ccc; font-weight: 600; flex: 1; }
+  .fix-category { color: #666; font-size: 0.65rem; }
+
+  /* Footer */
+  .report-footer {
+    text-align: center;
+    padding-top: 1.5rem;
+    border-top: 1px solid #222;
+    margin-top: 2rem;
+  }
+  .report-footer a {
+    color: #ff4444;
+    text-decoration: none;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .report-footer .powered {
+    font-size: 0.6rem;
+    color: #444;
+    margin-top: 0.4rem;
+  }
+
+  /* Loading / Error */
+  .loading {
+    text-align: center;
+    padding: 4rem 0;
+    color: #666;
+    font-size: 0.85rem;
+  }
+  .error {
+    text-align: center;
+    padding: 4rem 0;
+    color: #ff4444;
+    font-size: 0.85rem;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #333;
+    border-top-color: #ff4444;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div id="content">
+    <div class="loading"><span class="spinner"></span> Loading report...</div>
+  </div>
+</div>
+
+<script>
+(async function() {
+  const params = new URLSearchParams(window.location.search);
+  const agentUrl = params.get('agent') || params.get('agent_url');
+  const evalId = params.get('eval_id');
+  const content = document.getElementById('content');
+
+  if (!agentUrl && !evalId) {
+    content.innerHTML = '<div class="error">Missing agent URL. Use ?agent=https://your-agent.com</div>';
+    return;
+  }
+
+  try {
+    let url;
+    if (evalId) {
+      url = '/api/results/' + encodeURIComponent(evalId);
+    } else {
+      url = '/api/report?agent_url=' + encodeURIComponent(agentUrl);
+    }
+
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      content.innerHTML = '<div class="error">No evaluation found for this agent.</div>';
+      return;
+    }
+
+    const data = await resp.json();
+    renderReport(data, agentUrl || data.agent_url);
+  } catch (err) {
+    content.innerHTML = '<div class="error">Failed to load report: ' + err.message + '</div>';
+  }
+})();
+
+function renderReport(data, agentUrl) {
+  const content = document.getElementById('content');
+  const sc = data.scorecard || {};
+  const retest = data.retest;
+  const hasRetest = retest && retest.summary;
+  const summary = hasRetest ? retest.summary : null;
+
+  const displayScore = hasRetest ? summary.after_score : sc.overall_score;
+  const displayBadge = displayScore >= 90 ? 'gold' : displayScore >= 70 ? 'silver' : displayScore >= 50 ? 'bronze' : 'none';
+  const badgeLabel = displayBadge === 'none' ? 'No Badge' : displayBadge + ' Badge';
+
+  const agentShort = (agentUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+  // Date
+  const dateStr = data.started_at
+    ? new Date(data.started_at * 1000).toLocaleDateString(undefined, {
+        year: 'numeric', month: 'long', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      })
+    : '';
+
+  let html = '';
+
+  // Header
+  html += '<div class="report-header">';
+  html += '<div class="brand"><a href="/">AgentChekkup</a> Security Report</div>';
+  html += '<h1>' + escapeHtml(agentShort) + '</h1>';
+  html += '<div class="eval-meta">';
+  if (dateStr) html += dateStr;
+  if (data.eval_id) html += ' &middot; eval ' + data.eval_id;
+  html += '</div>';
+  html += '</div>';
+
+  // Score hero
+  html += '<div class="score-hero">';
+  html += '<div class="score-big ' + displayBadge + '">' + displayScore + '</div>';
+  html += '<div class="score-label">' + (hasRetest ? 'Score After Fixes' : 'Overall Score') + '</div>';
+  html += '<div class="badge-pill ' + displayBadge + '">' + badgeLabel + '</div>';
+
+  // Before/After flow
+  if (hasRetest) {
+    const delta = summary.after_score - summary.before_score;
+    html += '<div class="fix-flow">';
+    html += '<div class="before"><div class="value">' + summary.before_score + '</div><div class="label">Before</div></div>';
+    html += '<div class="arrow">&rarr;</div>';
+    html += '<div class="after"><div class="value">' + summary.after_score + '</div><div class="label">After</div></div>';
+    html += '</div>';
+    html += '<div class="stats-line">';
+    html += (summary.after_passed || sc.total_passed) + ' passed &middot; ';
+    html += ((summary.total_tests || sc.total_tests) - (summary.after_passed || sc.total_passed)) + ' failed &middot; ';
+    html += (summary.total_tests || sc.total_tests) + ' total';
+    html += ' &middot; <span class="fixed">+' + (summary.tests_fixed || 0) + ' fixed</span>';
+    html += '</div>';
+  } else {
+    html += '<div class="stats-line">';
+    html += sc.total_passed + ' passed &middot; ' + sc.total_failed + ' failed &middot; ' + sc.total_tests + ' total';
+    if (data.duration_seconds) html += ' &middot; ' + data.duration_seconds + 's';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Category breakdown
+  const results = data.results || {};
+  const comparison = hasRetest ? (retest.comparison || {}) : {};
+  const catOrder = ['pii_leakage', 'injection_resistance', 'graceful_failure', 'instruction_adherence', 'output_consistency', 'hallucination'];
+
+  html += '<div class="section-title">Category Breakdown</div>';
+  html += '<div class="cat-grid">';
+
+  for (const catId of catOrder) {
+    const catData = results[catId];
+    if (!catData) continue;
+
+    const comp = comparison[catId];
+    const afterData = (comp && !comp.skipped && comp.after) ? comp.after : null;
+    const beforeData = (comp && comp.before) ? comp.before : null;
+
+    const score = afterData ? afterData.score : catData.score;
+    const scoreClass = score >= 80 ? 'pass' : score >= 50 ? 'warn' : 'fail';
+    const label = catId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const passed = afterData ? afterData.passed : catData.passed;
+    const total = afterData ? afterData.total : catData.total;
+    const improved = afterData && beforeData && afterData.score > beforeData.score;
+
+    html += '<div class="cat-card' + (improved ? ' improved' : '') + '">';
+    html += '<div class="cat-card-header">';
+    html += '<span class="cat-name">' + label + '</span>';
+    html += '<span class="cat-score ' + scoreClass + '">' + score + '</span>';
+    html += '</div>';
+    html += '<div class="cat-bar"><div class="cat-bar-fill ' + scoreClass + '" style="width:' + score + '%"></div></div>';
+    html += '<div class="cat-meta">' + passed + '/' + total + ' passed';
+
+    if (improved) {
+      const delta = afterData.score - beforeData.score;
+      html += '<span class="cat-delta positive">+' + delta + '</span>';
+    }
+    html += '</div>';
+
+    if (improved) {
+      html += '<div class="cat-flow"><span class="b">' + beforeData.score + '</span> &rarr; <span class="a">' + afterData.score + '</span></div>';
+    }
+
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Fixes applied
+  const fixes = (data.remediation && data.remediation.deployed_fixes) || [];
+  const liveFixes = fixes.filter(f => f.status === 'live');
+  if (liveFixes.length > 0) {
+    html += '<div class="fixes-section">';
+    html += '<div class="section-title">Fixes Applied (' + liveFixes.length + ')</div>';
+    for (const fix of liveFixes) {
+      html += '<div class="fix-item">';
+      html += '<span class="fix-status live">live</span>';
+      html += '<span class="fix-repo">' + escapeHtml(fix.repo || 'unknown') + '</span>';
+      html += '<span class="fix-category">' + (fix.fix_category || '').replace(/_/g, ' ') + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Footer
+  html += '<div class="report-footer">';
+  html += '<a href="/">Run your own evaluation &rarr;</a>';
+  html += '<div class="powered">Powered by AgentChekkup &middot; Adversarial testing for AI agents</div>';
+  html += '</div>';
+
+  content.innerHTML = html;
+  document.title = 'AgentChekkup Report - ' + agentShort;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

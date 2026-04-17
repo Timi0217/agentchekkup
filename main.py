@@ -195,6 +195,57 @@ def home():
     return (Path(__file__).parent / "index.html").read_text()
 
 
+@app.get("/report", response_class=HTMLResponse)
+def report_page():
+    """Serve the per-agent report page."""
+    return (Path(__file__).parent / "report.html").read_text()
+
+
+@app.get("/api/report")
+def get_report(agent_url: str):
+    """Get the latest evaluation report for a given agent URL.
+
+    Returns the full eval data including scorecard, category breakdown,
+    retest results, and remediation info.
+    """
+    # Search in-memory first
+    latest = None
+    for e in evaluations.values():
+        if e.get("agent_url") == agent_url and e.get("status") == "completed":
+            if latest is None or e.get("started_at", 0) > latest.get("started_at", 0):
+                latest = e
+
+    # Search local SQLite
+    if not latest:
+        from db import list_evaluations
+        local = list_evaluations(limit=100)
+        for e in local:
+            if e.get("agent_url") == agent_url:
+                # Load the full data blob
+                full = load_evaluation(e["eval_id"])
+                if full and full.get("status") == "completed":
+                    latest = full
+                    break
+
+    # Fall back to Chekk backend
+    if not latest:
+        try:
+            url = f"https://chekk-deploy-production.up.railway.app/api/v1/evaluations/history?agent_url={agent_url}&limit=1"
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            resp = urllib.request.urlopen(req, timeout=10, context=_CHAT_SSL_CTX)
+            data = json.loads(resp.read())
+            evals = data.get("evaluations", [])
+            if evals:
+                latest = evals[0]
+        except Exception:
+            pass
+
+    if not latest:
+        return JSONResponse({"error": "No evaluation found for this agent"}, status_code=404)
+
+    return latest
+
+
 @app.get("/api/stats")
 def stats():
     completed = sum(1 for e in evaluations.values() if e["status"] == "completed")
