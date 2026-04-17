@@ -339,23 +339,40 @@
 function renderReport(data, agentUrl) {
   const content = document.getElementById('content');
   const sc = data.scorecard || {};
-  const retest = data.retest;
-  const hasRetest = retest && retest.summary;
-  const summary = hasRetest ? retest.summary : null;
 
-  const displayScore = hasRetest ? summary.after_score : sc.overall_score;
+  // Retest data can come from multiple places:
+  // 1. data.retest (full eval blob from in-memory or SQLite)
+  // 2. data.scorecard.retest (Chekk backend stores retest inside scorecard JSON)
+  // 3. data.has_retest + data.before_score/after_score (history endpoint top-level fields)
+  const retest = data.retest || sc.retest || null;
+  const hasRetest = (retest && retest.summary) || data.has_retest;
+  const summary = (retest && retest.summary) ? retest.summary : (data.has_retest ? {
+    before_score: data.before_score,
+    after_score: data.after_score,
+    tests_fixed: data.tests_fixed || 0,
+    after_passed: sc.total_passed || data.total_passed,
+    total_tests: sc.total_tests || data.total_tests,
+  } : null);
+
+  const displayScore = hasRetest && summary ? (summary.after_score || sc.overall_score) : (sc.overall_score || data.overall_score);
   const displayBadge = displayScore >= 90 ? 'gold' : displayScore >= 70 ? 'silver' : displayScore >= 50 ? 'bronze' : 'none';
   const badgeLabel = displayBadge === 'none' ? 'No Badge' : displayBadge + ' Badge';
 
   const agentShort = (agentUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-  // Date
-  const dateStr = data.started_at
-    ? new Date(data.started_at * 1000).toLocaleDateString(undefined, {
-        year: 'numeric', month: 'long', day: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      })
-    : '';
+  // Date — handle both unix timestamp and ISO string
+  let dateStr = '';
+  if (data.started_at) {
+    dateStr = new Date(data.started_at * 1000).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  } else if (data.created_at) {
+    dateStr = new Date(data.created_at).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
 
   let html = '';
 
@@ -390,57 +407,79 @@ function renderReport(data, agentUrl) {
     html += ' &middot; <span class="fixed">+' + (summary.tests_fixed || 0) + ' fixed</span>';
     html += '</div>';
   } else {
+    const tp = sc.total_passed || data.total_passed || 0;
+    const tf = sc.total_failed || data.total_failed || 0;
+    const tt = sc.total_tests || data.total_tests || 0;
     html += '<div class="stats-line">';
-    html += sc.total_passed + ' passed &middot; ' + sc.total_failed + ' failed &middot; ' + sc.total_tests + ' total';
+    html += tp + ' passed &middot; ' + tf + ' failed &middot; ' + tt + ' total';
     if (data.duration_seconds) html += ' &middot; ' + data.duration_seconds + 's';
     html += '</div>';
   }
   html += '</div>';
 
-  // Category breakdown
+  // Category breakdown — try multiple sources:
+  // 1. data.results (full eval blob from memory/SQLite)
+  // 2. data.category_scores (Chekk backend history format)
+  // 3. data.scorecard.categories (scorecard JSON from backend)
   const results = data.results || {};
-  const comparison = hasRetest ? (retest.comparison || {}) : {};
+  const catScores = data.category_scores || sc.categories || {};
+  const comparison = (retest && retest.comparison) ? retest.comparison : {};
   const catOrder = ['pii_leakage', 'injection_resistance', 'graceful_failure', 'instruction_adherence', 'output_consistency', 'hallucination'];
 
-  html += '<div class="section-title">Category Breakdown</div>';
-  html += '<div class="cat-grid">';
-
+  // Merge results and catScores so we always have category data
+  const mergedCats = {};
   for (const catId of catOrder) {
-    const catData = results[catId];
-    if (!catData) continue;
-
-    const comp = comparison[catId];
-    const afterData = (comp && !comp.skipped && comp.after) ? comp.after : null;
-    const beforeData = (comp && comp.before) ? comp.before : null;
-
-    const score = afterData ? afterData.score : catData.score;
-    const scoreClass = score >= 80 ? 'pass' : score >= 50 ? 'warn' : 'fail';
-    const label = catId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    const passed = afterData ? afterData.passed : catData.passed;
-    const total = afterData ? afterData.total : catData.total;
-    const improved = afterData && beforeData && afterData.score > beforeData.score;
-
-    html += '<div class="cat-card' + (improved ? ' improved' : '') + '">';
-    html += '<div class="cat-card-header">';
-    html += '<span class="cat-name">' + label + '</span>';
-    html += '<span class="cat-score ' + scoreClass + '">' + score + '</span>';
-    html += '</div>';
-    html += '<div class="cat-bar"><div class="cat-bar-fill ' + scoreClass + '" style="width:' + score + '%"></div></div>';
-    html += '<div class="cat-meta">' + passed + '/' + total + ' passed';
-
-    if (improved) {
-      const delta = afterData.score - beforeData.score;
-      html += '<span class="cat-delta positive">+' + delta + '</span>';
+    if (results[catId]) {
+      mergedCats[catId] = results[catId];
+    } else if (catScores[catId]) {
+      mergedCats[catId] = catScores[catId];
     }
-    html += '</div>';
+  }
 
-    if (improved) {
-      html += '<div class="cat-flow"><span class="b">' + beforeData.score + '</span> &rarr; <span class="a">' + afterData.score + '</span></div>';
+  const hasCatData = Object.keys(mergedCats).length > 0;
+
+  if (hasCatData) {
+    html += '<div class="section-title">Category Breakdown</div>';
+    html += '<div class="cat-grid">';
+
+    for (const catId of catOrder) {
+      const catData = mergedCats[catId];
+      if (!catData) continue;
+
+      const comp = comparison[catId];
+      const afterData = (comp && !comp.skipped && comp.after) ? comp.after : null;
+      const beforeData = (comp && comp.before) ? comp.before : null;
+
+      const score = afterData ? afterData.score : catData.score;
+      if (score === undefined || score === null) continue;
+      const scoreClass = score >= 80 ? 'pass' : score >= 50 ? 'warn' : 'fail';
+      const label = catId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const passed = afterData ? afterData.passed : catData.passed;
+      const total = afterData ? afterData.total : catData.total;
+      const improved = afterData && beforeData && afterData.score > beforeData.score;
+
+      html += '<div class="cat-card' + (improved ? ' improved' : '') + '">';
+      html += '<div class="cat-card-header">';
+      html += '<span class="cat-name">' + label + '</span>';
+      html += '<span class="cat-score ' + scoreClass + '">' + score + '</span>';
+      html += '</div>';
+      html += '<div class="cat-bar"><div class="cat-bar-fill ' + scoreClass + '" style="width:' + score + '%"></div></div>';
+      html += '<div class="cat-meta">' + (passed !== undefined ? passed + '/' + total + ' passed' : 'Score: ' + score);
+
+      if (improved) {
+        const delta = afterData.score - beforeData.score;
+        html += '<span class="cat-delta positive">+' + delta + '</span>';
+      }
+      html += '</div>';
+
+      if (improved) {
+        html += '<div class="cat-flow"><span class="b">' + beforeData.score + '</span> &rarr; <span class="a">' + afterData.score + '</span></div>';
+      }
+
+      html += '</div>';
     }
-
     html += '</div>';
   }
-  html += '</div>';
 
   // Fixes applied
   const fixes = (data.remediation && data.remediation.deployed_fixes) || [];
