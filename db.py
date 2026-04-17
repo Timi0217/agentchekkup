@@ -5,11 +5,21 @@ survive restarts and users can browse history.
 """
 
 import json
+import logging
 import sqlite3
+import ssl
 import threading
 import time
+import urllib.request
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
+
+_CHEKK_BACKEND = "https://chekk-deploy-production.up.railway.app"
+_SSL_CTX = ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = ssl.CERT_NONE
 
 DB_PATH = Path(__file__).parent / "results.db"
 
@@ -52,7 +62,7 @@ def init_db():
 
 
 def save_evaluation(evaluation: dict):
-    """Insert or replace a full evaluation dict into SQLite."""
+    """Insert or replace a full evaluation dict into SQLite, and persist to Chekk backend."""
     conn = _get_conn()
     sc = evaluation.get("scorecard", {})
     conn.execute(
@@ -78,6 +88,20 @@ def save_evaluation(evaluation: dict):
         ),
     )
     conn.commit()
+
+    # Also persist to Chekk backend (PostgreSQL — survives Railway redeploys)
+    try:
+        body = json.dumps(evaluation).encode()
+        req = urllib.request.Request(
+            f"{_CHEKK_BACKEND}/api/v1/evaluations/store",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=10, context=_SSL_CTX)
+    except Exception as e:
+        log.warning("Failed to persist eval %s to Chekk backend: %s",
+                    evaluation.get("eval_id", "?"), e)
 
 
 def load_evaluation(eval_id: str) -> Optional[dict]:

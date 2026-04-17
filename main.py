@@ -488,7 +488,7 @@ def list_results(limit: int = 50):
                     started_at = dt.timestamp()
                 except Exception:
                     pass
-            normalized.append({
+            entry = {
                 "eval_id": e.get("eval_id", ""),
                 "agent_url": e.get("agent_url", ""),
                 "status": e.get("status", "completed"),
@@ -499,7 +499,14 @@ def list_results(limit: int = 50):
                 "total_tests": e.get("total_tests", 0),
                 "duration_seconds": None,
                 "started_at": started_at,
-            })
+            }
+            # Pass through retest data if present
+            if e.get("has_retest"):
+                entry["has_retest"] = True
+                entry["before_score"] = e.get("before_score")
+                entry["after_score"] = e.get("after_score")
+                entry["tests_fixed"] = e.get("tests_fixed", 0)
+            normalized.append(entry)
         return {"evaluations": normalized}
     except Exception as e:
         log.warning("Failed to fetch from Chekk backend: %s", e)

@@ -624,85 +624,6 @@
   }
   .copy-btn:hover { background: #a78bfa33; }
 
-  /* ── Retest Comparison ──────────────────────────────── */
-  .retest-section {
-    display: none;
-    margin-bottom: 2rem;
-    border-top: 1px solid #222;
-    padding-top: 1.5rem;
-  }
-  .retest-section.visible { display: block; }
-  .retest-section h2 {
-    font-size: 1rem;
-    color: #a78bfa;
-    margin-bottom: 0.5rem;
-  }
-  .retest-summary {
-    display: flex;
-    gap: 2rem;
-    justify-content: center;
-    align-items: center;
-    padding: 1.5rem;
-    background: #111;
-    border: 1px solid #222;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-  }
-  .retest-score-block { text-align: center; }
-  .retest-score-block .label {
-    font-size: 0.65rem;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.25rem;
-  }
-  .retest-score-block .score {
-    font-size: 2.5rem;
-    font-weight: 700;
-    line-height: 1;
-  }
-  .retest-score-block .score.before { color: #ff4444; }
-  .retest-score-block .score.after { color: #4ade80; }
-  .retest-arrow {
-    font-size: 1.5rem;
-    color: #4ade80;
-  }
-  .retest-meta {
-    text-align: center;
-    font-size: 0.75rem;
-    color: #888;
-    margin-bottom: 1rem;
-  }
-  .retest-meta .highlight { color: #4ade80; font-weight: 600; }
-  .retest-cat-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 0.8rem;
-    background: #111;
-    border: 1px solid #222;
-    border-radius: 4px;
-    margin-bottom: 0.4rem;
-    font-size: 0.8rem;
-  }
-  .retest-cat-row .cat-label {
-    flex: 1;
-    color: #ccc;
-    font-weight: 600;
-    font-size: 0.75rem;
-  }
-  .retest-cat-row .before-score { color: #ff6666; min-width: 60px; text-align: center; }
-  .retest-cat-row .arrow { color: #555; }
-  .retest-cat-row .after-score { color: #4ade80; min-width: 60px; text-align: center; font-weight: 600; }
-  .retest-cat-row .delta {
-    font-size: 0.7rem;
-    min-width: 50px;
-    text-align: right;
-  }
-  .retest-cat-row .delta.positive { color: #4ade80; }
-  .retest-cat-row .delta.zero { color: #666; }
-  .retest-cat-row .delta.negative { color: #ff4444; }
-  .retest-cat-row.skipped { opacity: 0.4; }
   .retest-btn {
     width: 100%;
     padding: 0.7rem;
@@ -982,12 +903,6 @@
     <div id="remediationContent"></div>
   </div>
 
-  <!-- Retest Comparison -->
-  <div class="retest-section" id="retestSection">
-    <h2>Before / After &mdash; Fix Verification</h2>
-    <div id="retestContent"></div>
-  </div>
-
   <!-- API Reference -->
   <div class="api-ref">
     <h2>API Reference</h2>
@@ -1218,7 +1133,6 @@ async function loadEvaluation(evalId) {
 
       // If retest already happened, show after-fixes view immediately
       if (result.retest) {
-        renderRetestComparison(result.retest);
         updateScorecardWithFixes(result.retest);
         if (result.remediation) {
           renderRemediation(result.remediation);
@@ -1263,7 +1177,6 @@ async function runGauntlet() {
   status.classList.add('visible');
   scorecard.classList.remove('visible');
   document.getElementById('remediation').classList.remove('visible');
-  document.getElementById('retestSection').classList.remove('visible');
   statusText.textContent = 'Starting evaluation...';
 
   // Stop any existing fix polling
@@ -1527,7 +1440,6 @@ async function autoRetestWithFixes() {
     if (!resp.ok) return;
 
     const data = await resp.json();
-    renderRetestComparison(data);
     updateScorecardWithFixes(data);
 
   } catch (err) {
@@ -1568,7 +1480,6 @@ async function retestWithFixes() {
     }
 
     const data = await resp.json();
-    renderRetestComparison(data);
     updateScorecardWithFixes(data);
 
   } catch (err) {
@@ -1580,84 +1491,6 @@ async function retestWithFixes() {
       btn.textContent = 'Retest Agent with Fixes Applied';
     }
   }
-}
-
-function renderRetestComparison(data) {
-  const section = document.getElementById('retestSection');
-  const content = document.getElementById('retestContent');
-  section.classList.add('visible');
-
-  const s = data.summary || {};
-  const comparison = data.comparison || {};
-
-  let html = '';
-
-  // Summary banner: before -> after score
-  html += '<div class="retest-summary">';
-  html += '<div class="retest-score-block">';
-  html += '<div class="label">Before Fixes</div>';
-  html += `<div class="score before">${s.before_score || 0}</div>`;
-  html += '</div>';
-  html += '<div class="retest-arrow">&rarr;</div>';
-  html += '<div class="retest-score-block">';
-  html += '<div class="label">After Fixes</div>';
-  html += `<div class="score after">${s.after_score || 0}</div>`;
-  html += '</div>';
-  html += '</div>';
-
-  // Meta line
-  const delta = (s.after_score || 0) - (s.before_score || 0);
-  html += '<div class="retest-meta">';
-  html += `<span class="highlight">+${s.tests_fixed || 0} tests fixed</span>`;
-  html += ` &middot; ${s.after_passed || 0}/${s.total_tests || 0} passing`;
-  html += ` &middot; ${data.prescriptions_applied || 0} prescriptions applied`;
-  html += ` &middot; score ${delta >= 0 ? '+' : ''}${delta}`;
-  html += '</div>';
-
-  // Per-category rows
-  const catOrder = ['pii_leakage', 'injection_resistance', 'graceful_failure', 'instruction_adherence', 'output_consistency', 'hallucination'];
-  for (const catId of catOrder) {
-    const c = comparison[catId];
-    if (!c) continue;
-
-    const label = catId.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
-
-    if (c.skipped) {
-      html += `<div class="retest-cat-row skipped">`;
-      html += `<span class="cat-label">${label}</span>`;
-      html += `<span class="before-score">${c.before?.score ?? '--'}</span>`;
-      html += `<span class="arrow">=</span>`;
-      html += `<span class="after-score">${c.before?.score ?? '--'}</span>`;
-      html += `<span class="delta zero">skipped</span>`;
-      html += '</div>';
-      continue;
-    }
-
-    const before = c.before || {};
-    const after = c.after || {};
-    const catDelta = (after.score || 0) - (before.score || 0);
-    const deltaClass = catDelta > 0 ? 'positive' : catDelta === 0 ? 'zero' : 'negative';
-    const deltaStr = catDelta > 0 ? `+${catDelta}` : `${catDelta}`;
-
-    html += `<div class="retest-cat-row">`;
-    html += `<span class="cat-label">${label}</span>`;
-    html += `<span class="before-score">${before.passed ?? 0}/${before.total ?? 0} (${before.score ?? 0})</span>`;
-    html += `<span class="arrow">&rarr;</span>`;
-    html += `<span class="after-score">${after.passed ?? 0}/${after.total ?? 0} (${after.score ?? 0})</span>`;
-    html += `<span class="delta ${deltaClass}">${deltaStr}</span>`;
-    html += '</div>';
-  }
-
-  // Fixes used
-  if (data.fixes_used && data.fixes_used.length > 0) {
-    html += '<div style="margin-top:1rem;font-size:0.7rem;color:#666">';
-    html += '<strong style="color:#888">Fixes applied:</strong> ';
-    html += data.fixes_used.map(f => `${f.fix_category.replace(/_/g, ' ')}`).join(', ');
-    html += '</div>';
-  }
-
-  content.innerHTML = html;
-  section.scrollIntoView({ behavior: 'smooth' });
 }
 
 function updateScorecardWithFixes(data) {
