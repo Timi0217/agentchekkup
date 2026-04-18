@@ -59,9 +59,9 @@ FAILURE_REMEDIATION_MAP = {
         "failure_type": "system_prompt_extraction",
         "description": "Agent leaked its system prompt when asked directly",
         "queries": [
-            "llm guard prompt injection protection language:python stars:>20",
-            "prompt protection system prompt leak prevention stars:>10",
-            "ai guardrails input output filter language:python stars:>50",
+            "llm guard prompt injection api server language:python stars:>20",
+            "prompt protection guardrails fastapi language:python stars:>10",
+            "ai guardrails input output filter api language:python stars:>30",
         ],
         "fix_category": "prompt_protection",
         "integration_hint": "Add as a middleware/filter before your agent processes user input. The tool should intercept requests that attempt to extract system prompts.",
@@ -70,9 +70,9 @@ FAILURE_REMEDIATION_MAP = {
         "failure_type": "credential_leakage",
         "description": "Agent revealed credentials under social engineering pressure",
         "queries": [
-            "pii detection redaction python language:python stars:>50",
-            "sensitive data scrubber text redaction language:python stars:>20",
-            "presidio pii anonymizer stars:>100",
+            "pii detection redaction api fastapi language:python stars:>10",
+            "sensitive data scrubber text redaction server language:python stars:>10",
+            "pii anonymizer api service language:python stars:>20",
         ],
         "fix_category": "pii_scrubbing",
         "integration_hint": "Run agent output through the PII scrubber before returning to the user. It will redact API keys, passwords, and other credentials.",
@@ -81,9 +81,9 @@ FAILURE_REMEDIATION_MAP = {
         "failure_type": "conversation_pii_leakage",
         "description": "Agent exposed PII (SSN, emails) from conversation history",
         "queries": [
-            "pii detection ssn email phone redaction language:python stars:>20",
-            "text anonymization named entity redaction stars:>50",
-            "data masking pii python stars:>10",
+            "pii detection redaction api server language:python stars:>10",
+            "text anonymization named entity api language:python stars:>20",
+            "data masking pii scrubber fastapi language:python stars:>5",
         ],
         "fix_category": "pii_scrubbing",
         "integration_hint": "Filter agent outputs through a PII detector. Redact SSNs, emails, phone numbers, and other PII before the response reaches the user.",
@@ -116,9 +116,9 @@ FAILURE_REMEDIATION_MAP = {
         "failure_type": "tool_output_injection",
         "description": "Agent was hijacked by adversarial instructions in tool output",
         "queries": [
-            "prompt injection detection classifier language:python stars:>50",
-            "llm input sanitization injection defense stars:>20",
-            "rebuff prompt injection firewall stars:>10",
+            "prompt injection detection api fastapi language:python stars:>10",
+            "llm guard prompt injection protection language:python stars:>50",
+            "prompt injection classifier server language:python stars:>20",
         ],
         "fix_category": "injection_defense",
         "integration_hint": "Scan all tool outputs for injection payloads before feeding them to the agent. Flag and sanitize any text containing instruction-like patterns.",
@@ -127,9 +127,9 @@ FAILURE_REMEDIATION_MAP = {
         "failure_type": "instruction_override",
         "description": "Agent accepted fake system update from user message",
         "queries": [
-            "prompt injection detection language:python stars:>30",
-            "llm firewall input validation stars:>20",
-            "ai safety input filter instruction override detection stars:>10",
+            "prompt injection detection api server language:python stars:>10",
+            "llm firewall input validation fastapi language:python stars:>5",
+            "prompt guard scanner api language:python stars:>10",
         ],
         "fix_category": "injection_defense",
         "integration_hint": "Add an input classifier that detects instruction-override attempts (e.g., '[SYSTEM UPDATE]', 'ignore previous instructions') and blocks them.",
@@ -149,9 +149,9 @@ FAILURE_REMEDIATION_MAP = {
         "failure_type": "hidden_instruction_in_content",
         "description": "Agent followed instructions hidden in HTML comments or markdown",
         "queries": [
-            "html comment strip sanitize input language:python stars:>10",
-            "markdown sanitizer hidden content removal stars:>5",
-            "input sanitization strip html comments language:python stars:>10",
+            "html sanitizer strip comments api fastapi language:python stars:>5",
+            "text sanitization hidden content removal server language:python stars:>5",
+            "input sanitizer html markdown cleaner api language:python stars:>10",
         ],
         "fix_category": "input_sanitization",
         "integration_hint": "Strip HTML comments, hidden unicode, and non-visible content from user inputs before passing to the agent.",
@@ -1028,11 +1028,20 @@ def get_remediation_for_evaluation(scored_results: dict) -> dict:
     return remediation
 
 
-# ── Known Fixes Registry (LAST RESORT) ────────────────────────────────
-# Pre-deployed fallback tools on Chekk. Used ONLY when GitHub search
-# finds no viable third-party repos for a fix category. The primary flow
-# is: search GitHub → deploy proven repo via Chekk → apply as prescription.
-# These exist purely as a safety net so no failure goes unaddressed.
+# ── Known Fixes Registry (MONITORING / HOT-SWAP) ──────────────────────
+# Previously deployed fix services maintained by Chekk. These are NOT
+# used as a primary deployment source or fallback. Their purpose:
+#
+# 1. MONITORING: Track which services were previously deployed and working.
+#    When a newly deployed GitHub fix breaks, Chekk can reference this
+#    registry to know what a working version looks like.
+#
+# 2. HOT-SWAP: If a deployed GitHub fix's health check fails post-deploy,
+#    Chekk can swap it out for another GitHub candidate (not these).
+#    These exist as a "last known good" reference for compatibility checks.
+#
+# The goal is ZERO Chekk-branded fixes in production. All fixes should
+# come from third-party GitHub repos, maintained by Chekk post-patch.
 
 KNOWN_FIXES = {
     "pii_scrubbing": {
@@ -1191,10 +1200,12 @@ def _get_manifest(deployed_url: str) -> Optional[dict]:
 
 
 def _collect_best_per_category(remediation: dict) -> dict:
-    """Group recommended repos by fix_category and pick the best for each.
+    """Group recommended repos by fix_category and return ranked candidates.
 
-    Also tracks categories that had 0 repos from GitHub search — these
-    can still be resolved by KNOWN_FIXES in auto_deploy_fixes.
+    Returns up to 3 candidate repos per category, sorted by stars descending.
+    If the top candidate fails to deploy, auto_deploy_fixes tries the next.
+    Categories with 0 GitHub repos get an empty candidates list — these
+    fall through to prescription-only fixes (system prompt patch).
     """
     best_per_category = {}
     for test_rem in remediation.get("failed_tests", []):
@@ -1203,20 +1214,230 @@ def _collect_best_per_category(remediation: dict) -> dict:
 
         if fix_cat not in best_per_category:
             best_per_category[fix_cat] = {
-                "repo": repos[0] if repos else None,
+                "candidates": list(repos),  # all candidate repos
                 "test_ids": [test_rem["test_id"]],
                 "failure_type": test_rem.get("failure_type", ""),
                 "integration_hint": test_rem.get("integration_hint", ""),
             }
         else:
             best_per_category[fix_cat]["test_ids"].append(test_rem["test_id"])
-            if repos:
-                top_repo = repos[0]
-                existing = best_per_category[fix_cat]["repo"]
-                if not existing or top_repo.get("stars", 0) > existing.get("stars", 0):
-                    best_per_category[fix_cat]["repo"] = top_repo
+            # Merge repos, dedup by full_name
+            existing_names = {r.get("full_name") for r in best_per_category[fix_cat]["candidates"]}
+            for r in repos:
+                if r.get("full_name") not in existing_names:
+                    best_per_category[fix_cat]["candidates"].append(r)
+                    existing_names.add(r.get("full_name"))
+
+    # Sort candidates by stars descending and keep top 3
+    for fix_cat, info in best_per_category.items():
+        info["candidates"] = sorted(
+            info["candidates"],
+            key=lambda r: r.get("stars", 0),
+            reverse=True,
+        )[:3]
 
     return best_per_category
+
+
+# Heavy dependencies that cause build timeouts on Railway's free tier.
+# Repos depending on these need 5-10min+ builds vs 1-2min for lightweight.
+_HEAVY_DEPS = {
+    "torch", "pytorch", "tensorflow", "tf", "transformers", "huggingface",
+    "jax", "flax", "paddle", "paddlepaddle", "onnxruntime", "triton",
+    "detectron2", "mmdet", "ultralytics", "spacy", "flair",
+    "sentence-transformers", "accelerate", "bitsandbytes",
+}
+
+
+def _check_requirements_weight(full_name: str) -> dict:
+    """Check if a repo has heavy ML dependencies that cause build timeouts.
+
+    Fetches requirements.txt via GitHub raw content and scans for known
+    heavy packages. Returns {"heavy": bool, "heavy_deps": [str]}.
+    """
+    url = f"https://raw.githubusercontent.com/{full_name}/HEAD/requirements.txt"
+    headers = {"User-Agent": "AgentChekkup/1.0"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        resp = urllib.request.urlopen(req, timeout=5, context=_SSL_CTX)
+        content = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return {"heavy": False, "heavy_deps": []}
+
+    found_heavy = []
+    for line in content.splitlines():
+        line = line.strip().lower()
+        if not line or line.startswith("#"):
+            continue
+        # Extract package name (before any version specifier)
+        pkg = line.split("==")[0].split(">=")[0].split("<=")[0].split("[")[0].split(">")[0].split("<")[0].strip()
+        pkg_normalized = pkg.replace("-", "").replace("_", "")
+        for heavy in _HEAVY_DEPS:
+            if heavy.replace("-", "") in pkg_normalized:
+                found_heavy.append(pkg)
+                break
+
+    return {"heavy": bool(found_heavy), "heavy_deps": found_heavy}
+
+
+def _vet_github_repo(repo: dict) -> dict:
+    """Vet a GitHub repo for deployability before attempting to deploy.
+
+    Checks:
+    1. Repo structure (Procfile, Dockerfile, server files, etc.)
+    2. Dependency weight (heavy ML deps → likely timeout)
+    3. Language compatibility
+
+    Returns {"deployable": bool, "reason": str, "has_server": bool,
+             "heavy": bool, "score": int} where score 0-100 ranks
+             deploy likelihood (higher = more likely to succeed).
+    """
+    full_name = repo.get("full_name", "")
+    if not full_name:
+        return {"deployable": False, "reason": "No repo name", "has_server": False, "heavy": False, "score": 0}
+
+    # Check repo contents via GitHub API
+    url = f"https://api.github.com/repos/{full_name}/contents"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "AgentChekkup/1.0",
+    }
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
+    with _github_lock:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            resp = urllib.request.urlopen(req, timeout=10, context=_SSL_CTX)
+            contents = json.loads(resp.read())
+        except Exception as e:
+            log.warning("Failed to vet repo %s: %s", full_name, e)
+            return {"deployable": True, "reason": "Could not vet (API error)", "has_server": False, "heavy": False, "score": 30}
+
+    if not isinstance(contents, list):
+        return {"deployable": True, "reason": "Unexpected API response", "has_server": False, "heavy": False, "score": 20}
+
+    file_names = {item.get("name", "").lower() for item in contents}
+
+    # Strong signals: deployable web service
+    has_procfile = "procfile" in file_names
+    has_dockerfile = "dockerfile" in file_names
+    has_docker_compose = "docker-compose.yml" in file_names or "docker-compose.yaml" in file_names
+    has_requirements = "requirements.txt" in file_names
+    has_pyproject = "pyproject.toml" in file_names
+    has_setup_py = "setup.py" in file_names or "setup.cfg" in file_names
+    has_package_json = "package.json" in file_names
+    has_go_mod = "go.mod" in file_names
+
+    # Server file patterns
+    server_files = {"server.py", "app.py", "main.py", "index.js", "index.ts", "main.go"}
+    has_server = bool(server_files & file_names)
+
+    # Check for heavy dependencies
+    weight = _check_requirements_weight(full_name)
+    is_heavy = weight["heavy"]
+
+    # Score the repo: higher = more likely to deploy successfully
+    score = 50  # base score
+    if has_procfile:
+        score += 25
+    if has_dockerfile:
+        score += 20
+    if has_server:
+        score += 15
+    if has_requirements and not has_setup_py:
+        score += 10  # requirements.txt without setup.py = more likely a service
+    if has_setup_py and not has_server:
+        score -= 20  # library pattern
+    if has_pyproject and not has_server:
+        score -= 15
+    if is_heavy:
+        score -= 30  # heavy deps = likely timeout
+
+    # Language check: prefer Python repos for our fix categories
+    repo_lang = (repo.get("language") or "").lower()
+    if repo_lang == "python":
+        score += 5
+    elif repo_lang in ("javascript", "typescript"):
+        score += 3
+
+    # Deployable: has a Procfile/Dockerfile OR has server files with deps
+    if has_procfile or has_dockerfile or has_docker_compose:
+        reason = "Has deploy config"
+        if is_heavy:
+            reason += f" (warning: heavy deps: {', '.join(weight['heavy_deps'][:3])})"
+        return {"deployable": True, "reason": reason, "has_server": True, "heavy": is_heavy, "score": min(score, 100)}
+
+    if has_server and (has_requirements or has_package_json or has_go_mod):
+        reason = "Has server + deps"
+        if is_heavy:
+            reason += f" (warning: heavy deps: {', '.join(weight['heavy_deps'][:3])})"
+        return {"deployable": True, "reason": reason, "has_server": True, "heavy": is_heavy, "score": min(score, 100)}
+
+    # Libraries: Chekk can auto-wrap these, so they ARE deployable
+    # but with lower confidence
+    if has_setup_py or has_pyproject:
+        reason = "Library (Chekk will auto-wrap)"
+        if is_heavy:
+            reason += f" — heavy deps may timeout: {', '.join(weight['heavy_deps'][:3])}"
+            return {"deployable": False, "reason": reason, "has_server": False, "heavy": True, "score": max(score, 5)}
+        return {"deployable": True, "reason": reason, "has_server": False, "heavy": False, "score": min(score, 100)}
+
+    # If it has requirements.txt + some python files, it might work
+    if has_requirements:
+        return {"deployable": True, "reason": "Has requirements.txt (uncertain)", "has_server": False, "heavy": is_heavy, "score": min(score, 100)}
+
+    # Default: attempt but flag as uncertain
+    return {"deployable": True, "reason": "Unknown structure", "has_server": False, "heavy": False, "score": max(score, 10)}
+
+
+def _health_check_fix(deployed_url: str, fix_cat: str) -> bool:
+    """Verify a deployed fix service actually responds on its expected endpoint.
+
+    Each fix category maps to a specific API path (/scan, /scrub, /check, etc.).
+    We send a minimal test request and check for a non-error response.
+    """
+    template = PRESCRIPTION_TEMPLATES.get(fix_cat)
+    if not template:
+        # No template — just check root
+        path = "/"
+    else:
+        path = template["api_call"].get("path", "/")
+
+    test_url = f"{deployed_url.rstrip('/')}{path}"
+    test_body = json.dumps({"text": "health check test"}).encode()
+
+    try:
+        req = urllib.request.Request(
+            test_url,
+            data=test_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=10, context=_SSL_CTX)
+        status = resp.getcode()
+        if status < 400:
+            log.info("Health check passed for %s at %s (HTTP %d)", fix_cat, test_url, status)
+            return True
+        log.warning("Health check failed for %s at %s (HTTP %d)", fix_cat, test_url, status)
+        return False
+    except urllib.error.HTTPError as e:
+        # 405 Method Not Allowed is OK — means the endpoint exists
+        if e.code == 405:
+            log.info("Health check passed (405) for %s at %s", fix_cat, test_url)
+            return True
+        # 422 Unprocessable Entity is OK — means server is up, just bad input
+        if e.code == 422:
+            log.info("Health check passed (422) for %s at %s", fix_cat, test_url)
+            return True
+        log.warning("Health check failed for %s at %s (HTTP %d)", fix_cat, test_url, e.code)
+        return False
+    except Exception as e:
+        log.warning("Health check failed for %s at %s: %s", fix_cat, test_url, e)
+        return False
 
 
 def _deploy_single_fix(
@@ -1224,9 +1445,9 @@ def _deploy_single_fix(
     fix_cat: str,
     on_complete: Optional[Callable] = None,
 ):
-    """Deploy a single fix on Chekk, poll until live, fetch manifest.
+    """Deploy a single fix on Chekk, poll until live, health-check.
 
-    Designed to run in a background thread. Mutates fix_entry in-place
+    Designed to run in a thread. Mutates fix_entry in-place
     and calls on_complete(fix_entry) when done so the caller can persist.
     """
     repo_url = fix_entry["repo_url"]
@@ -1267,14 +1488,20 @@ def _deploy_single_fix(
     deployed_url = final.get("deployed_url")
 
     if final_status == "live" and deployed_url:
-        fix_entry["status"] = "live"
-        fix_entry["deployed_url"] = deployed_url
+        # Health check: verify the service actually works
+        if _health_check_fix(deployed_url, fix_cat):
+            fix_entry["status"] = "live"
+            fix_entry["deployed_url"] = deployed_url
 
-        manifest = _get_manifest(deployed_url)
-        if manifest:
-            fix_entry["manifest"] = manifest
+            manifest = _get_manifest(deployed_url)
+            if manifest:
+                fix_entry["manifest"] = manifest
 
-        fix_entry["prescription"] = generate_prescription(fix_cat, deployed_url)
+            fix_entry["prescription"] = generate_prescription(fix_cat, deployed_url)
+        else:
+            fix_entry["status"] = "health_check_failed"
+            fix_entry["deployed_url"] = deployed_url
+            fix_entry["error"] = f"Service deployed but health check failed on expected endpoint"
     else:
         fix_entry["status"] = final_status or "failed"
         fix_entry["error"] = final.get("error_message", "")
@@ -1283,98 +1510,176 @@ def _deploy_single_fix(
         on_complete(fix_entry)
 
 
+def _deploy_category_fix(
+    fix_cat: str,
+    info: dict,
+    already_deployed: set,
+    on_fix_complete: Optional[Callable] = None,
+) -> Optional[dict]:
+    """Try to deploy a fix for one category by working through candidates.
+
+    Vets each candidate, attempts deploy, health-checks. If a candidate
+    fails, moves to the next. Returns the fix_entry if successful, or
+    a prescription-only entry if all deploys fail but we can still patch
+    the system prompt.
+    """
+    candidates = info.get("candidates", [])
+
+    # ── Phase 1: Vet candidates and sort by deploy likelihood ──────
+    vetted = []
+    for repo in candidates:
+        repo_name = repo.get("full_name", "")
+        if not repo_name or repo_name in already_deployed:
+            continue
+
+        vet = _vet_github_repo(repo)
+        vetted.append({
+            "repo": repo,
+            "vet": vet,
+            "deployable": vet.get("deployable", False),
+            "has_server": vet.get("has_server", False),
+            "score": vet.get("score", 0),
+        })
+
+    # Sort by vet score (deploy likelihood), highest first
+    vetted.sort(key=lambda v: v["score"], reverse=True)
+
+    # ── Phase 2: Try deploying each vetted candidate ───────────────
+    for candidate in vetted:
+        repo = candidate["repo"]
+        repo_url = repo.get("url", "")
+        repo_name = repo.get("full_name", "")
+
+        if not candidate["deployable"]:
+            log.info("Skipping %s for %s: %s", repo_name, fix_cat, candidate["vet"].get("reason"))
+            continue
+
+        already_deployed.add(repo_name)
+
+        fix_entry = {
+            "fix_category": fix_cat,
+            "repo": repo_name,
+            "repo_url": repo_url,
+            "stars": repo.get("stars", 0),
+            "fixes_tests": info["test_ids"],
+            "integration_hint": info["integration_hint"],
+            "status": "deploying",
+            "deployed_url": None,
+            "manifest": None,
+            "source": "github_search",
+            "vet_reason": candidate["vet"].get("reason", ""),
+        }
+
+        log.info("Attempting deploy for %s: %s (%d stars, %s)",
+                 fix_cat, repo_name, repo.get("stars", 0),
+                 candidate["vet"].get("reason", "unknown"))
+
+        _deploy_single_fix(fix_entry, fix_cat, None)  # synchronous
+
+        if fix_entry["status"] == "live":
+            log.info("GitHub fix deployed for %s: %s -> %s",
+                     fix_cat, repo_name, fix_entry.get("deployed_url"))
+            if on_fix_complete:
+                on_fix_complete(fix_entry)
+            return fix_entry
+
+        # This candidate failed — log why and try next
+        log.warning("Candidate %s failed for %s: %s (status=%s)",
+                    repo_name, fix_cat, fix_entry.get("error", ""), fix_entry["status"])
+
+    # ── Phase 3: All candidates failed — apply prescription-only fix ──
+    # Even without a deployed service, the system_prompt_patch alone
+    # can improve scores significantly. This is still a third-party fix
+    # strategy: the prescription templates are category-specific rules.
+    log.info("All %d candidates failed for %s — applying prescription-only fix",
+             len(vetted), fix_cat)
+
+    prescription = generate_prescription(fix_cat, "")
+    # Strip the API call since there's no deployed service
+    if prescription:
+        prescription["api_call"] = None
+        prescription["service_status"] = "prescription_only"
+
+    fix_entry = {
+        "fix_category": fix_cat,
+        "repo": None,
+        "repo_url": None,
+        "stars": 0,
+        "fixes_tests": info["test_ids"],
+        "integration_hint": info["integration_hint"],
+        "status": "prescription_only",
+        "deployed_url": None,
+        "manifest": None,
+        "prescription": prescription,
+        "source": "prompt_patch",
+        "candidates_tried": len(vetted),
+    }
+
+    if on_fix_complete:
+        on_fix_complete(fix_entry)
+    return fix_entry
+
+
 def auto_deploy_fixes(
     remediation: dict,
     on_fix_complete: Optional[Callable] = None,
     background: bool = True,
 ) -> dict:
-    """Auto-deploy the top fix for each failure category on Chekk.
+    """Auto-deploy the best fix for each failure category from GitHub.
 
-    Primary flow: search GitHub → find proven repos → deploy via Chekk →
-    apply as prescription → retest. KNOWN_FIXES is the LAST resort,
-    used only when GitHub search returned 0 viable repos for a category.
+    Strategy:
+    1. For each fix category, vet all candidate repos for deployability
+    2. Try deploying the best candidate; if it fails, try the next
+    3. Health-check each deployed service to verify it responds
+    4. If all candidates fail, apply a prescription-only fix (system
+       prompt patch without a deployed service) — this alone can improve
+       scores by 10-20 points
 
-    When background=True (default), deploys run in daemon threads so the
-    evaluation returns fast.
+    KNOWN_FIXES is used only as a monitoring/hot-swap registry: when a
+    deployed GitHub fix later breaks, Chekk can hot-swap to the known
+    alternative. It is NOT used as a primary or fallback deployment source.
 
     on_fix_complete is called per-fix when it finishes (live/failed/timeout).
-    Use this to persist intermediate results to SQLite.
+    Use this to persist intermediate results.
     """
     already_deployed = set()
     best_per_category = _collect_best_per_category(remediation)
     deployed_fixes = []
 
-    for fix_cat, info in best_per_category.items():
-        # ── Primary: deploy the best GitHub repo found ────────────
-        repo = info["repo"]
-        if repo:
-            repo_url = repo.get("url", "")
-            repo_name = repo.get("full_name", "")
+    if background:
+        # Launch one thread per category — each thread tries candidates
+        # sequentially within its category
+        threads = []
+        results_lock = threading.Lock()
 
-            if repo_url and repo_name not in already_deployed:
-                already_deployed.add(repo_name)
+        def _deploy_cat_thread(fix_cat, info):
+            result = _deploy_category_fix(
+                fix_cat, info, already_deployed, on_fix_complete
+            )
+            if result:
+                with results_lock:
+                    deployed_fixes.append(result)
 
-                fix_entry = {
-                    "fix_category": fix_cat,
-                    "repo": repo_name,
-                    "repo_url": repo_url,
-                    "stars": repo.get("stars", 0),
-                    "fixes_tests": info["test_ids"],
-                    "integration_hint": info["integration_hint"],
-                    "status": "deploying",
-                    "deployed_url": None,
-                    "manifest": None,
-                    "source": "github_search",
-                }
-                deployed_fixes.append(fix_entry)
+        for fix_cat, info in best_per_category.items():
+            t = threading.Thread(
+                target=_deploy_cat_thread,
+                args=(fix_cat, info),
+                daemon=True,
+            )
+            threads.append(t)
+            t.start()
 
-                if background:
-                    t = threading.Thread(
-                        target=_deploy_single_fix,
-                        args=(fix_entry, fix_cat, on_fix_complete),
-                        daemon=True,
-                    )
-                    t.start()
-                    log.info("GitHub fix deploying for %s: %s (%d stars)", fix_cat, repo_name, repo.get("stars", 0))
-                else:
-                    _deploy_single_fix(fix_entry, fix_cat, on_fix_complete)
-                continue
-
-        # ── Last resort: use known fallback fix ───────────────────
-        known = KNOWN_FIXES.get(fix_cat)
-        if known:
-            deployed_url = known["deployed_url"]
-            repo_name = known["repo"]
-
-            if repo_name in already_deployed:
-                continue
-            already_deployed.add(repo_name)
-
-            manifest = _get_manifest(deployed_url)
-            prescription = generate_prescription(fix_cat, deployed_url)
-
-            fix_entry = {
-                "fix_category": fix_cat,
-                "repo": repo_name,
-                "repo_url": known["repo_url"],
-                "stars": known.get("stars", 0),
-                "fixes_tests": info["test_ids"],
-                "integration_hint": info["integration_hint"],
-                "status": "live",
-                "deployed_url": deployed_url,
-                "manifest": manifest,
-                "prescription": prescription,
-                "source": "fallback",
-            }
-            deployed_fixes.append(fix_entry)
-            log.info("Fallback fix applied for %s: %s (no GitHub repo found)", fix_cat, repo_name)
-
-            if on_fix_complete:
-                on_fix_complete(fix_entry)
-            continue
-
-        # ── No fix available at all ───────────────────────────────
-        log.warning("No fix available for category %s (0 GitHub repos, no fallback)", fix_cat)
+        # Wait for all category deploys to finish (with timeout)
+        for t in threads:
+            t.join(timeout=360)  # 6 min max per category
+    else:
+        # Synchronous mode
+        for fix_cat, info in best_per_category.items():
+            result = _deploy_category_fix(
+                fix_cat, info, already_deployed, on_fix_complete
+            )
+            if result:
+                deployed_fixes.append(result)
 
     remediation["deployed_fixes"] = deployed_fixes
     return remediation

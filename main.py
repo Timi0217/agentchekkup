@@ -1013,20 +1013,23 @@ async def retest_with_fixes(eval_id: str):
             content={"error": "Evaluation not yet completed", "status": evaluation["status"]},
         )
 
-    # Collect all live prescriptions from deployed fixes
+    # Collect prescriptions from all actionable fixes (live services + prompt-only)
     remediation = evaluation.get("remediation", {})
     deployed_fixes = remediation.get("deployed_fixes", [])
-    live_fixes = [f for f in deployed_fixes if f.get("status") == "live"]
+    actionable_fixes = [
+        f for f in deployed_fixes
+        if f.get("status") in ("live", "prescription_only")
+    ]
 
-    if not live_fixes:
+    if not actionable_fixes:
         return JSONResponse(
             status_code=400,
-            content={"error": "No live fixes to test. Wait for fixes to deploy or run /api/evaluate first."},
+            content={"error": "No fixes available. Wait for fixes to deploy or run /api/evaluate first."},
         )
 
-    # Gather prescriptions from all live fixes
+    # Gather prescriptions from all actionable fixes
     prescriptions = []
-    for fix in live_fixes:
+    for fix in actionable_fixes:
         rx = fix.get("prescription")
         if rx:
             prescriptions.append(rx)
@@ -1034,7 +1037,7 @@ async def retest_with_fixes(eval_id: str):
     if not prescriptions:
         return JSONResponse(
             status_code=400,
-            content={"error": "Live fixes exist but none have prescriptions attached."},
+            content={"error": "Fixes exist but none have prescriptions attached."},
         )
 
     # Re-run failed categories with prescriptions applied
